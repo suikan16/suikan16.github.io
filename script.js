@@ -108,12 +108,20 @@ function renderWeatherToContainer(weatherData, forecastList, containerId) {
 
     const rec = getRecommendation(weatherData);
     const hourlyData = forecastList.filter(item => item.dt > Math.floor(Date.now() / 1000)).slice(0, 24);
+    
+    // Проверяем, есть ли город в избранном
+    const isFavorite = favorites.includes(weatherData.name);
+    const favStar = isFavorite ? "★" : "⭐";
+    const favClass = isFavorite ? "favorite-btn active" : "favorite-btn";
 
     const html = `
         <div class="city-header">
             <h2>${weatherData.name}</h2>
             <div class="date-time">${formatDate(weatherData.dt)}</div>
-            <button class="favorite-toggle" data-city="${weatherData.name}">⭐ Добавить в избранное</button>
+            <button class="${favClass}" data-city="${weatherData.name}">
+                <span class="fav-star">${favStar}</span>
+                <span class="fav-text">${isFavorite ? "В избранном" : "В избранное"}</span>
+            </button>
         </div>
         <div class="main-weather">
             <div class="temp-section">
@@ -167,11 +175,22 @@ function renderWeatherToContainer(weatherData, forecastList, containerId) {
         displayDailyForecast(forecastContainer, forecastList);
     }
 
-    const favBtn = container.querySelector('.favorite-toggle');
+    const favBtn = container.querySelector('.favorite-btn');
     if (favBtn) {
         favBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            addToFavorites(weatherData.name);
+            const city = favBtn.dataset.city;
+            if (favorites.includes(city)) {
+                removeFromFavorites(city);
+                favBtn.classList.remove('active');
+                favBtn.querySelector('.fav-star').textContent = "⭐";
+                favBtn.querySelector('.fav-text').textContent = "В избранное";
+            } else {
+                addToFavorites(city);
+                favBtn.classList.add('active');
+                favBtn.querySelector('.fav-star').textContent = "★";
+                favBtn.querySelector('.fav-text').textContent = "В избранном";
+            }
             updateFavoritesList();
         });
     }

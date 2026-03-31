@@ -543,3 +543,57 @@ body {
         min-width: 85px;
     }
 }
+
+/* Кнопка избранного */
+.favorite-btn {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 40px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    color: #92400e;
+    margin-top: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.favorite-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: linear-gradient(135deg, #fde68a 0%, #fcd34d 100%);
+}
+
+.favorite-btn.active {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+.favorite-btn .fav-star {
+    font-size: 18px;
+    transition: transform 0.2s;
+}
+
+.favorite-btn:hover .fav-star {
+    transform: scale(1.1);
+}
+
+.favorite-btn .fav-text {
+    font-size: 13px;
+}
+
+/* Тёмная тема для кнопки */
+body.dark .favorite-btn {
+    background: linear-gradient(135deg, #92400e 0%, #b45309 100%);
+    color: #fffbeb;
+}
+
+body.dark .favorite-btn.active {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #1a1a2e;
+}

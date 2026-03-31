@@ -7,27 +7,55 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    
-    <div class="weather-app">
-        <div class="weather-card">
-            <h1>🌤️ Погода</h1>
-            
-            <!-- Поиск города -->
-            <div class="input-group">
-                <input type="text" id="cityInput" placeholder="Город" lang="ru">
-                <button onclick="searchWeather()">Найти</button>
+    <div class="app-container">
+        <!-- Изначальный вид: две колонки -->
+        <div class="split-layout" id="splitLayout">
+            <!-- Левая колонка: виджет местоположения -->
+            <div class="column left-col">
+                <div class="weather-widget" id="locationWidget">
+                    <div class="widget-header">
+                        <span class="widget-icon">📍</span>
+                        <h3>Моё местоположение</h3>
+                    </div>
+                    <div class="widget-content" id="locationContent">
+                        <div class="loading-container">
+                            <div class="loading-spinner"></div>
+                            <p>Определяем ваш город...</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
-            <!-- Виджет погоды -->
-            <div class="weather-widget" id="weatherWidget">
-                <div class="loading-container">
-                    <div class="loading-spinner"></div>
-                    <p>Определяем ваше местоположение...</p>
+
+            <!-- Правая колонка: поиск города -->
+            <div class="column right-col">
+                <div class="search-card">
+                    <h2>🔍 Поиск города</h2>
+                    <div class="input-group">
+                        <input type="text" id="cityInput" placeholder="Например, Москва" lang="ru">
+                        <button id="searchBtn">Найти</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вид после поиска: полноэкранный виджет выбранного города -->
+        <div class="full-layout" id="fullLayout" style="display: none;">
+            <div class="weather-widget full-widget">
+                <div class="widget-header">
+                    <span class="widget-icon">🔍</span>
+                    <h3 id="searchedCityTitle">Результат поиска</h3>
+                    <button class="back-btn" id="backBtn">← Назад</button>
+                </div>
+                <div class="widget-content" id="fullContent">
+                    <div class="loading-container">
+                        <div class="loading-spinner"></div>
+                        <p>Загрузка...</p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <script src="script.js"></script>
 </body>
 </html>

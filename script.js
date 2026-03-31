@@ -1,5 +1,42 @@
 const API_KEY = "c2f9cfdd2cb513c0f812f89130d91f2b";
 
+// Кэш для прогноза
+const forecastCache = {};
+
+// ========== СОБСТВЕННЫЕ ИКОНКИ ==========
+const weatherIcons = {
+    // Ясно
+    "01d": "☀️",
+    "01n": "🌙",
+    // Мало облаков
+    "02d": "⛅",
+    "02n": "☁️",
+    // Облачно
+    "03d": "☁️",
+    "03n": "☁️",
+    "04d": "☁️",
+    "04n": "☁️",
+    // Дождь
+    "09d": "🌧️",
+    "09n": "🌧️",
+    "10d": "🌦️",
+    "10n": "🌧️",
+    "11d": "⛈️",
+    "11n": "⛈️",
+    // Снег
+    "13d": "❄️",
+    "13n": "❄️",
+    // Туман
+    "50d": "🌫️",
+    "50n": "🌫️",
+    // По умолчанию
+    "default": "🌡️"
+};
+
+// Функция получения иконки по коду погоды
+function getWeatherIcon(iconCode) {
+    return weatherIcons[iconCode] || weatherIcons.default;
+}
 
 // Форматирование даты
 function formatDate(timestamp) {
@@ -29,9 +66,28 @@ function formatVisibility(meters) {
     return `${meters} м`;
 }
 
+// Получение описания погоды на русском
+function getWeatherDescription(weatherMain, weatherDesc) {
+    const descriptions = {
+        "Clear": "Ясно",
+        "Clouds": "Облачно",
+        "Rain": "Дождь",
+        "Snow": "Снег",
+        "Thunderstorm": "Гроза",
+        "Drizzle": "Морось",
+        "Mist": "Туман",
+        "Fog": "Туман",
+        "Haze": "Дымка"
+    };
+    return descriptions[weatherMain] || weatherDesc;
+}
+
 // Отображение погоды
 function renderWeather(data) {
     const widget = document.getElementById("weatherWidget");
+    const iconCode = data.weather[0].icon;
+    const weatherMain = data.weather[0].main;
+    const weatherDesc = data.weather[0].description;
     
     const html = `
         <div class="city-header">
@@ -45,8 +101,8 @@ function renderWeather(data) {
                 <div class="feels-like">Ощущается как ${Math.round(data.main.feels_like)}°C</div>
             </div>
             <div class="weather-icon">
-                <img src="https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png" alt="погода">
-                <div class="weather-description">${data.weather[0].description}</div>
+                <div class="weather-emoji">${getWeatherIcon(iconCode)}</div>
+                <div class="weather-description">${getWeatherDescription(weatherMain, weatherDesc)}</div>
             </div>
         </div>
         
@@ -95,70 +151,133 @@ function renderWeather(data) {
     `;
     
     widget.innerHTML = html;
-    loadForecast(data.name);
+    setTimeout(() => loadForecast(data.name), 10);
 }
 
 // Загрузка прогноза
 async function loadForecast(city) {
+    const container = document.getElementById("forecastContainer");
+    if (!container) return;
+    
+    if (forecastCache[city]) {
+        displayForecastCards(forecastCache[city]);
+        return;
+    }
+    
     try {
+        container.innerHTML = `
+            <div class="forecast-skeleton">
+                ${[1,2,3,4,5].map(() => `
+                    <div class="forecast-card skeleton">
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-icon"></div>
+                        <div class="skeleton-line"></div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
         const response = await fetch(
             `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${API_KEY}&units=metric&lang=ru`
         );
         const data = await response.json();
         
-        if (data.cod === "200") {
-            const dailyForecasts = {};
-            
-            data.list.forEach(item => {
-                const date = item.dt_txt.split(' ')[0];
-                if (!dailyForecasts[date]) {
-                    dailyForecasts[date] = {
-                        date: date,
-                        temps: [],
-                        tempMins: [],
-                        tempMaxs: [],
-                        icons: []
-                    };
-                }
-                dailyForecasts[date].temps.push(item.main.temp);
-                dailyForecasts[date].tempMins.push(item.main.temp_min);
-                dailyForecasts[date].tempMaxs.push(item.main.temp_max);
-                dailyForecasts[date].icons.push(item.weather[0].icon);
-            });
-            
-            const forecastList = Object.values(dailyForecasts).slice(0, 5).map(day => ({
-                date: day.date,
-                temp_avg: Math.round(day.temps.reduce((a, b) => a + b, 0) / day.temps.length),
-                temp_min: Math.round(Math.min(...day.tempMins)),
-                temp_max: Math.round(Math.max(...day.tempMaxs)),
-                icon: day.icons[Math.floor(day.icons.length / 2)]
-            }));
-            
-            const container = document.getElementById("forecastContainer");
-            const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-            
-            container.innerHTML = forecastList.map(day => {
-                const date = new Date(day.date);
-                const dayName = days[date.getDay()];
-                const dayMonth = `${date.getDate()}.${date.getMonth() + 1}`;
-                return `
-                    <div class="forecast-card">
-                        <div class="day">${dayName}</div>
-                        <div class="date">${dayMonth}</div>
-                        <img src="https://openweathermap.org/img/wn/${day.icon}.png" alt="">
-                        <div class="temp">${day.temp_avg}°</div>
-                        <div class="temp-range">${day.temp_min}° / ${day.temp_max}°</div>
-                    </div>
-                `;
-            }).join('');
+        if (data.cod !== "200") {
+            throw new Error(data.message);
         }
+        
+        const forecast = processForecastFast(data);
+        forecastCache[city] = forecast;
+        displayForecastCards(forecast);
+        
     } catch (error) {
         console.error("Ошибка прогноза:", error);
-        const container = document.getElementById("forecastContainer");
-        if (container) {
-            container.innerHTML = '<div class="forecast-loading">Не удалось загрузить прогноз</div>';
+        container.innerHTML = '<div class="forecast-loading">Не удалось загрузить прогноз</div>';
+    }
+}
+
+// Быстрая обработка прогноза
+function processForecastFast(data) {
+    const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const today = new Date().setHours(0, 0, 0, 0);
+    
+    const dayMap = new Map();
+    
+    for (const item of data.list) {
+        const date = new Date(item.dt * 1000);
+        const dayStart = date.setHours(0, 0, 0, 0);
+        
+        if (dayStart === today) continue;
+        
+        const dateKey = date.toISOString().split('T')[0];
+        
+        if (!dayMap.has(dateKey)) {
+            dayMap.set(dateKey, {
+                date: dateKey,
+                temps: [],
+                tempMins: [],
+                tempMaxs: [],
+                icons: []
+            });
+        }
+        
+        const day = dayMap.get(dateKey);
+        day.temps.push(item.main.temp);
+        day.tempMins.push(item.main.temp_min);
+        day.tempMaxs.push(item.main.temp_max);
+        
+        const hour = date.getHours();
+        if (hour >= 11 && hour <= 13) {
+            day.icons.push(item.weather[0].icon);
         }
     }
+    
+    const forecastList = Array.from(dayMap.values())
+        .slice(0, 5)
+        .map(day => ({
+            date: day.date,
+            temp_avg: Math.round(day.temps.reduce((a, b) => a + b, 0) / day.temps.length),
+            temp_min: Math.round(Math.min(...day.tempMins)),
+            temp_max: Math.round(Math.max(...day.tempMaxs)),
+            icon: day.icons[0] || "01d"
+        }));
+    
+    return { forecastList, days };
+}
+
+// Отображение карточек прогноза с собственными иконками
+function displayForecastCards(forecastData) {
+    const container = document.getElementById("forecastContainer");
+    if (!container) return;
+    
+    const { forecastList, days } = forecastData;
+    
+    if (!forecastList.length) {
+        container.innerHTML = '<div class="forecast-loading">Нет данных прогноза</div>';
+        return;
+    }
+    
+    let html = '';
+    
+    for (const day of forecastList) {
+        const date = new Date(day.date);
+        const dayName = days[date.getDay()];
+        const dayMonth = `${date.getDate()}.${date.getMonth() + 1}`;
+        const iconEmoji = getWeatherIcon(day.icon);
+        
+        html += `
+            <div class="forecast-card">
+                <div class="day">${dayName}</div>
+                <div class="date">${dayMonth}</div>
+                <div class="forecast-emoji">${iconEmoji}</div>
+                <div class="temp">${day.temp_avg}°</div>
+                <div class="temp-range">${day.temp_min}° / ${day.temp_max}°</div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
 }
 
 // Показать загрузку
@@ -199,64 +318,38 @@ async function searchWeather() {
     }
 }
 
-// ========== ОПРЕДЕЛЕНИЕ ПО IP (ВМЕСТО ГЕОЛОКАЦИИ) ==========
-
-// Загрузка погоды по IP (основной способ)
+// Определение по IP
 async function loadWeatherByIP() {
-    showLoading("Определяем ваш город по IP...");
+    showLoading("Определяем ваш город...");
     
-    try {
-        // Пробуем несколько сервисов для надёжности
-        let city = null;
-        let country = null;
-        
-        // Сервис 1: ipapi.co (самый быстрый)
+    const services = [
+        { name: "ipapi.co", url: "https://ipapi.co/json/", getCity: (d) => d.city },
+        { name: "ipwho.is", url: "https://ipwho.is/", getCity: (d) => d.city },
+        { name: "ip-api.com", url: "https://ip-api.com/json/", getCity: (d) => d.city },
+        { name: "geoplugin", url: "https://www.geoplugin.net/json.gp", getCity: (d) => d.geoplugin_city },
+        { name: "ipinfo.io", url: "https://ipinfo.io/json", getCity: (d) => d.city }
+    ];
+    
+    let city = null;
+    
+    for (const service of services) {
         try {
-            const response = await fetch('https://ipapi.co/json/');
-            const data = await response.json();
-            if (data.city) {
-                city = data.city;
-                country = data.country_name;
-                console.log(`✅ Город определён через ipapi: ${city}, ${country}`);
-            }
-        } catch (e) {
-            console.log("ipapi не ответил, пробуем следующий");
-        }
-        
-        // Сервис 2: ipwho.is (запасной)
-        if (!city) {
-            try {
-                const response = await fetch('https://ipwho.is/');
-                const data = await response.json();
-                if (data.city) {
-                    city = data.city;
-                    country = data.country;
-                    console.log(`✅ Город определён через ipwho: ${city}, ${country}`);
-                }
-            } catch (e) {
-                console.log("ipwho не ответил");
-            }
-        }
-        
-        // Сервис 3: freegeoip.app (ещё один запасной)
-        if (!city) {
-            try {
-                const response = await fetch('https://freegeoip.app/json/');
-                const data = await response.json();
-                if (data.city) {
-                    city = data.city;
-                    country = data.country_name;
-                    console.log(`✅ Город определён через freegeoip: ${city}, ${country}`);
-                }
-            } catch (e) {
-                console.log("freegeoip не ответил");
-            }
-        }
-        
-        // Если город определился, загружаем погоду
-        if (city) {
-            showLoading(`Город: ${city}, загружаем погоду...`);
+            const response = await fetch(service.url);
+            if (!response.ok) continue;
             
+            const data = await response.json();
+            const detectedCity = service.getCity(data);
+            
+            if (detectedCity && detectedCity !== "null" && detectedCity !== "") {
+                city = detectedCity;
+                console.log(`✅ Город: ${city}`);
+                break;
+            }
+        } catch (e) {}
+    }
+    
+    if (city) {
+        try {
             const weatherResponse = await fetch(
                 `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=ru`
             );
@@ -266,19 +359,13 @@ async function loadWeatherByIP() {
                 renderWeather(weatherData);
                 return;
             }
-        }
-        
-        // Если ничего не сработало, показываем Москву
-        console.log("⚠️ Не удалось определить город, показываем Москву");
-        loadDefaultWeather();
-        
-    } catch (error) {
-        console.error("❌ Ошибка определения по IP:", error);
-        loadDefaultWeather();
+        } catch (e) {}
     }
+    
+    loadDefaultWeather();
 }
 
-// Загрузка погоды по умолчанию (Москва)
+// Загрузка погоды по умолчанию
 async function loadDefaultWeather() {
     showLoading("Загрузка погоды...");
     
@@ -289,12 +376,11 @@ async function loadDefaultWeather() {
         const data = await response.json();
         renderWeather(data);
     } catch (error) {
-        console.error("Ошибка:", error);
-        document.getElementById("weatherWidget").innerHTML = '<div class="loading-container"><p>Ошибка загрузки погоды. Проверьте интернет.</p></div>';
+        document.getElementById("weatherWidget").innerHTML = '<div class="loading-container"><p>Ошибка загрузки</p></div>';
     }
 }
 
-// Добавляем стили
+// Стили
 const style = document.createElement('style');
 style.textContent = `
     .loading-container {
@@ -321,10 +407,44 @@ style.textContent = `
         padding: 20px;
         color: #64748b;
     }
+    .weather-emoji {
+        font-size: 72px;
+        line-height: 1;
+    }
+    .forecast-emoji {
+        font-size: 36px;
+        margin: 8px 0;
+    }
+    .forecast-skeleton {
+        display: flex;
+        gap: 12px;
+    }
+    .forecast-card.skeleton {
+        background: #f1f5f9;
+    }
+    .skeleton-line {
+        height: 14px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        margin: 8px 0;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    .skeleton-icon {
+        width: 48px;
+        height: 48px;
+        background: #e2e8f0;
+        border-radius: 50%;
+        margin: 8px auto;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
 `;
 document.head.appendChild(style);
 
-// ЗАПУСК ПРИ ЗАГРУЗКЕ СТРАНИЦЫ
+// ЗАПУСК
 window.addEventListener("load", () => {
     console.log("🚀 Приложение запущено");
     loadWeatherByIP();

@@ -221,60 +221,80 @@ async function searchWeather() {
 }
 
 // Загрузка погоды по геопозиции
-function loadGeoWeather() {
-    // Проверяем поддержку геолокации
-    if (!navigator.geolocation) {
-        console.log("Геолокация не поддерживается, показываем Москву");
-        loadDefaultWeather();
-        return;
-    }
+async function loadWeatherByIP() {
+    showLoading("Определяем ваш город по IP...");
     
-    showLoading();
-    
-    navigator.geolocation.getCurrentPosition(
-        async (position) => {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            
-            console.log(`Координаты получены: ${lat}, ${lon}`);
-            
-            try {
-                const response = await fetch(
-                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=ru`
-                );
-                const data = await response.json();
-                
-                if (data.cod === 200) {
-                    renderWeather(data);
-                } else {
-                    throw new Error(data.message);
-                }
-            } catch (error) {
-                console.error("Ошибка при запросе погоды:", error);
-                loadDefaultWeather();
+    try {
+        // Пробуем несколько сервисов для надёжности
+        let city = null;
+        let country = null;
+        
+        // Сервис 1: ipapi.co (самый быстрый)
+        try {
+            const response = await fetch('https://ipapi.co/json/');
+            const data = await response.json();
+            if (data.city) {
+                city = data.city;
+                country = data.country_name;
+                console.log(`✅ Город определён через ipapi: ${city}, ${country}`);
             }
-        },
-        (error) => {
-            console.log("Ошибка геолокации:", error);
-            switch(error.code) {
-                case error.PERMISSION_DENIED:
-                    console.log("Пользователь запретил геолокацию");
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    console.log("Информация о местоположении недоступна");
-                    break;
-                case error.TIMEOUT:
-                    console.log("Время запроса истекло");
-                    break;
-            }
-            loadDefaultWeather();
-        },
-        {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
+        } catch (e) {
+            console.log("ipapi не ответил, пробуем следующий");
         }
-    );
+        
+        // Сервис 2: ipwho.is (запасной)
+        if (!city) {
+            try {
+                const response = await fetch('https://ipwho.is/');
+                const data = await response.json();
+                if (data.city) {
+                    city = data.city;
+                    country = data.country;
+                    console.log(`✅ Город определён через ipwho: ${city}, ${country}`);
+                }
+            } catch (e) {
+                console.log("ipwho не ответил");
+            }
+        }
+        
+        // Сервис 3: freegeoip.app (ещё один запасной)
+        if (!city) {
+            try {
+                const response = await fetch('https://freegeoip.app/json/');
+                const data = await response.json();
+                if (data.city) {
+                    city = data.city;
+                    country = data.country_name;
+                    console.log(`✅ Город определён через freegeoip: ${city}, ${country}`);
+                }
+            } catch (e) {
+                console.log("freegeoip не ответил");
+            }
+        }
+        
+        // Если город определился, загружаем погоду
+        if (city) {
+            showLoading(`Город: ${city}, загружаем погоду...`);
+            
+            const weatherResponse = await fetch(
+                `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=ru`
+            );
+            const weatherData = await weatherResponse.json();
+            
+            if (weatherData.cod === 200) {
+                renderWeather(weatherData);
+                return;
+            }
+        }
+        
+        // Если ничего не сработало, показываем Москву
+        console.log("⚠️ Не удалось определить город, показываем Москву");
+        loadDefaultWeather();
+        
+    } catch (error) {
+        console.error("❌ Ошибка определения по IP:", error);
+        loadDefaultWeather();
+    }
 }
 
 // Загрузка погоды по умолчанию (Москва)

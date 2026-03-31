@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Погода Онлайн</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Chart.js для графика -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -26,13 +28,24 @@
                 </div>
             </div>
 
-            <!-- Правая колонка: поиск города -->
+            <!-- Правая колонка: поиск + избранное + тема -->
             <div class="column right-col">
                 <div class="search-card">
                     <h2>🔍 Поиск города</h2>
                     <div class="input-group">
                         <input type="text" id="cityInput" placeholder="Например, Москва" lang="ru">
                         <button id="searchBtn">Найти</button>
+                    </div>
+                </div>
+
+                <!-- Избранные города -->
+                <div class="favorites-card">
+                    <div class="favorites-header">
+                        <span>⭐ Избранное</span>
+                        <button id="themeToggle" class="theme-toggle-btn" title="Тёмная/светлая тема">🌙</button>
+                    </div>
+                    <div class="favorites-list" id="favoritesList">
+                        <p class="favorites-empty">Нет избранных городов</p>
                     </div>
                 </div>
             </div>

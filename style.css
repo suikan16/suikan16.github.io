@@ -13,6 +13,67 @@
     --spinner-top: #667eea;
 }
 
+/* Большой логотип */
+.logo-container {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.main-logo {
+    background: var(--card-bg);
+    border-radius: 32px;
+    padding: 24px 20px;
+    box-shadow: var(--shadow);
+    transition: transform 0.3s ease;
+}
+
+.main-logo:hover {
+    transform: translateY(-5px);
+}
+
+.logo-icon {
+    font-size: 64px;
+    margin-bottom: 12px;
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.logo-text h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.logo-text p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* Адаптация для мобильных */
+@media (max-width: 768px) {
+    .logo-icon {
+        font-size: 48px;
+    }
+    
+    .logo-text h1 {
+        font-size: 24px;
+    }
+    
+    .main-logo {
+        padding: 20px 16px;
+    }
+}
+
 body.dark {
     --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     --card-bg: #1f2937;

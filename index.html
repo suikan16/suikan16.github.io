@@ -4,11 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Погода Онлайн</title>
-    <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌤️</text></svg>">
     <link rel="stylesheet" href="style.css">
-    <!-- Chart.js для графика -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -33,6 +30,17 @@
 
             <!-- Правая колонка: поиск + избранное + тема -->
             <div class="column right-col">
+                <!-- Большой логотип над поиском -->
+                <div class="logo-container">
+                    <div class="main-logo">
+                        <div class="logo-icon">🌤️</div>
+                        <div class="logo-text">
+                            <h1>Погода Онлайн</h1>
+                            <p>Актуальный прогноз для любого города</p>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="search-card">
                     <h2>🔍 Поиск города</h2>
                     <div class="input-group">

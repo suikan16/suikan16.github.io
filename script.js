@@ -171,12 +171,12 @@ function getRecommendation(weather) {
     const wind = weather.wind.speed;
     const rain = weather.weather[0].main === "Rain" || weather.weather[0].main === "Drizzle";
     const snow = weather.weather[0].main === "Snow";
-    if (snow) return { text: "❄️ Снегопад! Обувайтесь теплее.", link: "https://www.ozon.ru/category/zimnyaya-obuv-14103/", linkText: "Купить зимнюю обувь" };
-    if (rain) return { text: "☔ Идёт дождь. Не забудьте зонт!", link: "https://www.ozon.ru/category/zonty-15512/", linkText: "Выбрать зонт" };
-    if (temp < -10) return { text: "🥶 Очень холодно! Надевайте тёплую шапку и пуховик.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=шапка+зимняя", linkText: "Купить шапку" };
-    if (temp < 0) return { text: "🧣 Холодно! Наденьте шапку и шарф.", link: "https://www.ozon.ru/category/golovnye-ubory-15519/", linkText: "Выбрать шапку" };
+    if (snow) return { text: "❄️ Снегопад! Обувайтесь теплее.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=зимняя+обувь", linkText: "Купить зимнюю обувь" };
+    if (rain) return { text: "☔ Идёт дождь. Не забудьте зонт!", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=зонт", linkText: "Выбрать зонт" };
+    if (temp < -10) return { text: "🥶 Очень холодно! Надевайте тёплую шапку и пуховик.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=зимняя+шапка", linkText: "Купить шапку" };
+    if (temp < 0) return { text: "🧣 Холодно! Наденьте шапку и шарф.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=осенняя+шапка", linkText: "Выбрать шапку" };
     if (temp > 25) return { text: "☀️ Жарко! Пейте воду и носите головной убор.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=бутылка+для+воды", linkText: "Купить бутылку" };
-    if (wind > 10) return { text: "💨 Сильный ветер! Возьмите ветровку.", link: "https://www.ozon.ru/category/kurtki-vetrovki-15511/", linkText: "Выбрать ветровку" };
+    if (wind > 10) return { text: "💨 Сильный ветер! Возьмите ветровку.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=ветровка", linkText: "Выбрать ветровку" };
     return { text: "🌡️ Погода комфортная. Хорошего дня!", link: null, linkText: null };
 }
 function renderHourlyChart(hourlyData, canvasId) {

@@ -292,9 +292,9 @@ async function loadLocationWeather() {
 
     // Если не получилось – Москва
     try {
-        const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=Moscow&appid=${API_KEY}&units=metric&lang=ru`);
+        const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=Novosibirsk&appid=${API_KEY}&units=metric&lang=ru`);
         const weather = await weatherRes.json();
-        const forecastRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=Moscow&appid=${API_KEY}&units=metric&lang=ru`);
+        const forecastRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=Novosibirsk&appid=${API_KEY}&units=metric&lang=ru`);
         const forecast = await forecastRes.json();
         renderWeatherToContainer(weather, forecast.list, "locationContent");
     } catch (e) {

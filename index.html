@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Погода Онлайн</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js для графика -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Изначальный вид: две колонки -->
+        <div class="split-layout" id="splitLayout">
+            <!-- Левая колонка: виджет местоположения -->
+            <div class="column left-col">
+                <div class="weather-widget" id="locationWidget">
+                    <div class="widget-header">
+                        <span class="widget-icon">📍</span>
+                        <h3>Моё местоположение</h3>
+                    </div>
+                    <div class="widget-content" id="locationContent">
+                        <div class="loading-container">
+                            <div class="loading-spinner"></div>
+                            <p>Определяем ваш город...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Правая колонка: поиск + избранное + тема -->
+            <div class="column right-col">
+                <div class="search-card">
+                    <h2>🔍 Поиск города</h2>
+                    <div class="input-group">
+                        <input type="text" id="cityInput" placeholder="Например, Москва" lang="ru">
+                        <button id="searchBtn">Найти</button>
+                    </div>
+                </div>
+
+                <!-- Избранные города -->
+                <div class="favorites-card">
+                    <div class="favorites-header">
+                        <span>⭐ Избранное</span>
+                        <button id="themeToggle" class="theme-toggle-btn" title="Тёмная/светлая тема">🌙</button>
+                    </div>
+                    <div class="favorites-list" id="favoritesList">
+                        <p class="favorites-empty">Нет избранных городов</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Вид после поиска: полноэкранный виджет выбранного города -->
+        <div class="full-layout" id="fullLayout" style="display: none;">
+            <div class="weather-widget full-widget">
+                <div class="widget-header">
+                    <span class="widget-icon">🔍</span>
+                    <h3 id="searchedCityTitle">Результат поиска</h3>
+                    <button class="back-btn" id="backBtn">← Назад</button>
+                </div>
+                <div class="widget-content" id="fullContent">
+                    <div class="loading-container">
+                        <div class="loading-spinner"></div>
+                        <p>Загрузка...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -12,7 +12,9 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Изначальный вид: две колонки -->
+        <div class="theme-toggle-container">
+            <button id="themeToggle" class="theme-toggle-btn">🌙</button>
+        </div>
         <div class="split-layout" id="splitLayout">
             <!-- Левая колонка: виджет местоположения -->
             <div class="column left-col">
@@ -55,7 +57,7 @@
                 <div class="favorites-card">
                     <div class="favorites-header">
                         <span>⭐ Избранное</span>
-                        <button id="themeToggle" class="theme-toggle-btn" title="Тёмная/светлая тема">🌙</button>
+                        <!-- кнопка темы удалена отсюда -->
                     </div>
                     <div class="favorites-list" id="favoritesList">
                         <p class="favorites-empty">Нет избранных городов</p>

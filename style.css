@@ -89,6 +89,19 @@ body.dark {
     --spinner-top: #9ca3af;
 }
 
+/* Дополнительные стили для тёмной темы — цвета текста */
+body.dark .forecast-card .temp,
+body.dark .forecast-card .temp-range,
+body.dark .sun-item span:not(.sun-icon) {
+    color: var(--text-primary);
+}
+body.dark .sun-item strong {
+    color: #667eea; /* оставляем время восхода/заката синим */
+}
+body.dark .forecast-card .day {
+    color: #9ca3af; /* день недели чуть светлее */
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -262,20 +275,6 @@ body {
     gap: 12px;
 }
 
-.theme-toggle-btn {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 20px;
-    transition: all 0.2s;
-}
-
-.theme-toggle-btn:hover {
-    background: var(--border-color);
-    transform: none;
-}
 
 .favorites-list {
     display: flex;
@@ -595,7 +594,7 @@ body.dark .favorite-btn.active {
     height: auto;
 }
 
-/* Прогноз на 5 дней */
+/* Прогноз на 5 дней — адаптивная сетка */
 .forecast-section h4 {
     font-size: 18px;
     color: var(--text-primary);
@@ -610,6 +609,21 @@ body.dark .favorite-btn.active {
     padding-bottom: 8px;
     justify-content: flex-start;
     width: 100%;
+    scrollbar-width: thin;
+}
+
+/* Для полноэкранного режима (ручной ввод) на десктопе — растягиваем карточки */
+@media (min-width: 769px) {
+    .full-widget .forecast-cards {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+        overflow-x: visible;
+    }
+    .full-widget .forecast-card {
+        min-width: auto;
+        width: 100%;
+    }
 }
 
 .forecast-card {
@@ -644,6 +658,7 @@ body.dark .favorite-btn.active {
     font-size: 18px;
     font-weight: 600;
     margin: 6px 0;
+    color: var(--text-primary);
 }
 
 .forecast-card .temp-range {
@@ -849,6 +864,13 @@ body.dark .favorite-btn.active {
         text-align: center;
         margin-top: 8px;
     }
+    
+    /* На мобильных в полноэкранном режиме оставляем горизонтальный скролл */
+    .full-widget .forecast-cards {
+        display: flex;
+        overflow-x: auto;
+        grid-template-columns: none;
+    }
 }
 
 /* Для очень маленьких экранов (до 480px) */
@@ -891,5 +913,43 @@ body.dark .favorite-btn.active {
     
     .widget-content {
         padding: 16px;
+    }
+}
+
+/* Кнопка переключения темы — в правом верхнем углу */
+.theme-toggle-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+.theme-toggle-btn {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 40px;
+    transition: all 0.2s;
+    color: var(--text-primary);
+    box-shadow: var(--shadow);
+}
+
+.theme-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+/* Адаптация для мобильных — чуть меньше отступы */
+@media (max-width: 768px) {
+    .theme-toggle-container {
+        top: 12px;
+        right: 12px;
+    }
+    .theme-toggle-btn {
+        font-size: 24px;
+        padding: 6px 10px;
     }
 }

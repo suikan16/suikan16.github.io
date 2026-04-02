@@ -127,17 +127,37 @@ async function getCityByIP() {
 
 let currentChart = null;
 
-function formatDate(timestamp) {
-    const d = new Date(timestamp * 1000);
-    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+// Исправленные функции для локального времени (с использованием смещения timezone в секундах)
+function formatDateLocal(timestamp, timezoneOffset) {
+    if (timezoneOffset === undefined || timezoneOffset === null) return "—";
+    let localSec = timestamp + timezoneOffset;
+    const daysSinceEpoch = Math.floor(localSec / 86400);
+    let remainder = localSec % 86400;
+    if (remainder < 0) remainder += 86400;
+    const date = new Date(daysSinceEpoch * 86400 * 1000);
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    const day = date.getUTCDate();
+    const hours = Math.floor(remainder / 3600);
+    const minutes = Math.floor((remainder % 3600) / 60);
+    const d = new Date(Date.UTC(year, month, day, hours, minutes));
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 }
-function formatTime(timestamp) {
-    const d = new Date(timestamp * 1000);
-    return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+function formatTimeLocal(timestamp, timezoneOffset) {
+    if (timezoneOffset === undefined || timezoneOffset === null) return "—";
+    let totalSeconds = timestamp + timezoneOffset;
+    totalSeconds %= 86400;
+    if (totalSeconds < 0) totalSeconds += 86400;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
+
 function formatVisibility(meters) {
     return meters >= 1000 ? `${(meters / 1000).toFixed(1)} км` : `${meters} м`;
 }
+
 const weatherIcons = {
     "01d": "☀️", "01n": "🌙",
     "02d": "⛅", "02n": "☁️",
@@ -150,9 +170,11 @@ const weatherIcons = {
     "50d": "🌫️", "50n": "🌫️",
     "default": "🌡️"
 };
+
 function getWeatherIcon(code) {
     return weatherIcons[code] || weatherIcons.default;
 }
+
 function getWeatherDescription(main) {
     const map = {
         "Clear": "Ясно",
@@ -166,6 +188,7 @@ function getWeatherDescription(main) {
     };
     return map[main] || main;
 }
+
 function getRecommendation(weather) {
     const temp = weather.main.temp;
     const wind = weather.wind.speed;
@@ -179,10 +202,17 @@ function getRecommendation(weather) {
     if (wind > 10) return { text: "💨 Сильный ветер! Возьмите ветровку.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=ветровка", linkText: "Выбрать ветровку" };
     return { text: "🌡️ Погода комфортная. Хорошего дня!", link: null, linkText: null };
 }
-function renderHourlyChart(hourlyData, canvasId) {
+
+function renderHourlyChart(hourlyData, canvasId, timezoneOffset) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const hours = hourlyData.map(item => new Date(item.dt * 1000).getHours() + ":00");
+    const hours = hourlyData.map(item => {
+        let totalSeconds = item.dt + timezoneOffset;
+        totalSeconds %= 86400;
+        if (totalSeconds < 0) totalSeconds += 86400;
+        const h = Math.floor(totalSeconds / 3600);
+        return `${h.toString().padStart(2, '0')}:00`;
+    });
     const temps = hourlyData.map(item => Math.round(item.main.temp));
     if (currentChart) currentChart.destroy();
     currentChart = new Chart(canvas, {
@@ -204,12 +234,13 @@ function renderHourlyChart(hourlyData, canvasId) {
         options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } } }
     });
 }
-function displayDailyForecast(container, forecastList) {
+
+function displayDailyForecast(container, forecastList, timezoneOffset) {
     const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
     const daily = new Map();
     for (const item of forecastList) {
-        const date = new Date(item.dt * 1000);
-        const dayKey = date.toISOString().split('T')[0];
+        let localSec = item.dt + timezoneOffset;
+        const dayKey = Math.floor(localSec / 86400);
         if (!daily.has(dayKey)) daily.set(dayKey, { temps: [], icons: [] });
         const d = daily.get(dayKey);
         d.temps.push(item.main.temp);
@@ -220,7 +251,8 @@ function displayDailyForecast(container, forecastList) {
         const min = Math.round(Math.min(...val.temps));
         const max = Math.round(Math.max(...val.temps));
         const icon = val.icons[Math.floor(val.icons.length/2)];
-        return { date: key, avg, min, max, icon };
+        const date = new Date(key * 86400 * 1000);
+        return { date: date.toISOString().split('T')[0], avg, min, max, icon };
     });
     let html = '';
     for (const day of dailyList) {
@@ -231,36 +263,45 @@ function displayDailyForecast(container, forecastList) {
     }
     container.innerHTML = html || '<div class="forecast-loading">Нет данных прогноза</div>';
 }
+
 function renderWeatherToContainer(weatherData, forecastList, containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
+    
+    const timezoneOffset = weatherData.timezone;
+    if (timezoneOffset === undefined) {
+        console.warn("Нет timezone в данных погоды");
+    }
     const rec = getRecommendation(weatherData);
     const hourlyData = forecastList.filter(item => item.dt > Math.floor(Date.now() / 1000)).slice(0, 24);
     const isFavorite = favorites.includes(weatherData.name);
     const favStar = isFavorite ? "★" : "⭐";
     const favClass = isFavorite ? "favorite-btn active" : "favorite-btn";
+    
     const html = `
         <div class="city-header">
             <h2>${weatherData.name}</h2>
-            <div class="date-time">${formatDate(weatherData.dt)}</div>
+            <div class="date-time">${formatDateLocal(weatherData.dt, timezoneOffset)}</div>
             <button class="${favClass}" data-city="${weatherData.name}"><span class="fav-star">${favStar}</span><span class="fav-text">${isFavorite ? "В избранном" : "В избранное"}</span></button>
         </div>
         <div class="main-weather"><div class="temp-section"><div class="current-temp">${Math.round(weatherData.main.temp)}°C</div><div class="feels-like">Ощущается как ${Math.round(weatherData.main.feels_like)}°C</div></div><div class="weather-icon"><div class="weather-emoji">${getWeatherIcon(weatherData.weather[0].icon)}</div><div class="weather-description">${getWeatherDescription(weatherData.weather[0].main)}</div></div></div>
         <div class="details-grid"><div class="detail-card"><div class="detail-icon">💧</div><div class="detail-label">Влажность</div><div class="detail-value">${weatherData.main.humidity}%</div></div><div class="detail-card"><div class="detail-icon">🌡️</div><div class="detail-label">Давление</div><div class="detail-value">${Math.round(weatherData.main.pressure * 0.750062)} мм рт. ст.</div></div><div class="detail-card"><div class="detail-icon">💨</div><div class="detail-label">Ветер</div><div class="detail-value">${weatherData.wind.speed.toFixed(1)} м/с</div></div><div class="detail-card"><div class="detail-icon">👁️</div><div class="detail-label">Видимость</div><div class="detail-value">${formatVisibility(weatherData.visibility)}</div></div></div>
-        <div class="sun-section"><div class="sun-item"><span class="sun-icon">🌅</span><span>Восход:</span><strong>${formatTime(weatherData.sys.sunrise)}</strong></div><div class="sun-item"><span class="sun-icon">🌇</span><span>Закат:</span><strong>${formatTime(weatherData.sys.sunset)}</strong></div></div>
+        <div class="sun-section"><div class="sun-item"><span class="sun-icon">🌅</span><span>Восход:</span><strong>${formatTimeLocal(weatherData.sys.sunrise, timezoneOffset)}</strong></div><div class="sun-item"><span class="sun-icon">🌇</span><span>Закат:</span><strong>${formatTimeLocal(weatherData.sys.sunset, timezoneOffset)}</strong></div></div>
         <div class="recommendation-section"><div class="recommendation-text">${rec.text}</div>${rec.link ? `<a href="${rec.link}" target="_blank" rel="noopener noreferrer" class="recommendation-link">${rec.linkText} →</a>` : ''}</div>
         <div class="hourly-section"><h4>⏰ Почасовой прогноз (24 часа)</h4><div class="hourly-chart-container"><canvas id="hourlyChart-${containerId}" width="400" height="200"></canvas></div></div>
         <div class="forecast-section"><h4>📅 Прогноз на 5 дней</h4><div class="forecast-cards" id="forecast-${containerId}"><div class="forecast-loading">Загрузка...</div></div></div>
     `;
     container.innerHTML = html;
+    
     if (hourlyData.length) {
-        setTimeout(() => renderHourlyChart(hourlyData, `hourlyChart-${containerId}`), 30);
+        setTimeout(() => renderHourlyChart(hourlyData, `hourlyChart-${containerId}`, timezoneOffset), 30);
     } else {
         const canvasContainer = container.querySelector('.hourly-chart-container');
         if (canvasContainer) canvasContainer.innerHTML = '<p class="forecast-loading">Нет данных для почасового прогноза</p>';
     }
     const forecastContainer = document.getElementById(`forecast-${containerId}`);
-    if (forecastContainer) displayDailyForecast(forecastContainer, forecastList);
+    if (forecastContainer) displayDailyForecast(forecastContainer, forecastList, timezoneOffset);
+    
     const favBtn = container.querySelector('.favorite-btn');
     if (favBtn) {
         favBtn.addEventListener('click', (e) => {
@@ -281,21 +322,27 @@ function renderWeatherToContainer(weatherData, forecastList, containerId) {
         });
     }
 }
+
 let favorites = [];
+
 function loadFavorites() {
     const stored = localStorage.getItem('favorites');
     favorites = stored ? JSON.parse(stored) : [];
     updateFavoritesList();
 }
+
 function saveFavorites() { localStorage.setItem('favorites', JSON.stringify(favorites)); }
+
 function addToFavorites(city) {
     if (!favorites.includes(city)) { favorites.push(city); saveFavorites(); }
 }
+
 function removeFromFavorites(city) {
     favorites = favorites.filter(c => c !== city);
     saveFavorites();
     updateFavoritesList();
 }
+
 function updateFavoritesList() {
     const container = document.getElementById('favoritesList');
     if (!container) return;
@@ -318,6 +365,7 @@ function updateFavoritesList() {
         if (removeBtn) removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeFromFavorites(city); });
     });
 }
+
 async function loadLocationWeather() {
     const locationContent = document.getElementById("locationContent");
     locationContent.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><p>Определяем ваш город...</p></div>`;
@@ -330,6 +378,7 @@ async function loadLocationWeather() {
         locationContent.innerHTML = '<div class="loading-container"><p>Ошибка загрузки</p></div>';
     }
 }
+
 async function searchAndShowFull(city) {
     const fullContent = document.getElementById("fullContent");
     fullContent.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><p>Поиск города ${city}...</p></div>`;
@@ -343,11 +392,13 @@ async function searchAndShowFull(city) {
         fullContent.innerHTML = `<div class="loading-container"><p style="color:#e53e3e;">❌ Город "${city}" не найден</p><p style="margin-top:12px;">Проверьте название и попробуйте снова</p></div>`;
     }
 }
+
 function goBackToSplit() {
     document.getElementById("fullLayout").style.display = "none";
     document.getElementById("splitLayout").style.display = "grid";
     document.getElementById("cityInput").value = "";
 }
+
 function initTheme() {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark') {
@@ -358,6 +409,7 @@ function initTheme() {
         document.getElementById('themeToggle').textContent = '🌙';
     }
 }
+
 function toggleTheme() {
     if (document.body.classList.contains('dark')) {
         document.body.classList.remove('dark');
@@ -369,6 +421,7 @@ function toggleTheme() {
         document.getElementById('themeToggle').textContent = '☀️';
     }
 }
+
 openDB().then(() => {
     loadFavorites();
     loadLocationWeather();

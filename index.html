@@ -63,6 +63,38 @@
                         <p class="favorites-empty">Нет избранных городов</p>
                     </div>
                 </div>
+                <!-- Виджет для сайта -->
+                <div class="embed-card">
+                    <div class="favorites-header" style="justify-content: space-between;">
+                        <span>📦 Виджет для сайта</span>
+                    </div>
+                    <div class="embed-controls">
+                        <div class="embed-field">
+                            <label>Город (оставьте пустым для автоопределения)</label>
+                            <input type="text" id="widgetCity" placeholder="Например, Лондон">
+                        </div>
+                        <div class="embed-field">
+                            <label>Тема</label>
+                            <select id="widgetTheme">
+                                <option value="light">Светлая</option>
+                                <option value="dark">Тёмная</option>
+                            </select>
+                        </div>
+                        <div class="embed-field">
+                            <label>Размер</label>
+                            <select id="widgetSize">
+                                <option value="full">Полный (с прогнозом)</option>
+                                <option value="compact">Компактный</option>
+                            </select>
+                        </div>
+                        <button id="generateWidgetBtn" class="generate-btn">Сгенерировать код виджета</button>
+                    </div>
+                    <div id="widgetCodeContainer" style="display: none; margin-top: 20px;">
+                        <label style="font-weight: 600;">Код для вставки на ваш сайт:</label>
+                        <textarea id="widgetCode" rows="3" readonly style="width:100%; background: var(--detail-bg); border-radius:16px; padding:12px; margin-top:8px; font-family:monospace; font-size:12px;"></textarea>
+                        <button id="copyWidgetCode" style="margin-top: 8px; background: #667eea; padding: 8px 16px;">Копировать</button>
+                    </div>
+                </div>
             </div>
         </div>
 

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Погода Виджет</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        /* iOS-стиль виджета */
+        .ios-widget {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(25px);
+            border-radius: 44px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            transition: all 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        body.dark .ios-widget {
+            background: rgba(30, 30, 40, 0.85);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        /* Компактный режим */
+        .ios-widget.compact {
+            padding: 16px;
+            border-radius: 32px;
+        }
+        .widget-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 12px;
+        }
+        .city-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1c1c1e;
+        }
+        body.dark .city-name {
+            color: #f5f5f7;
+        }
+        .temp-block {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .temp {
+            font-size: 64px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            color: #1c1c1e;
+        }
+        body.dark .temp {
+            color: #f5f5f7;
+        }
+        .weather-icon {
+            font-size: 56px;
+        }
+        .details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #3a3a3c;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 0.5px solid rgba(0, 0, 0, 0.15);
+        }
+        body.dark .details {
+            color: #aeaeb2;
+            border-top-color: rgba(255, 255, 255, 0.2);
+        }
+        .forecast {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 16px;
+            gap: 8px;
+        }
+        .forecast-day {
+            flex: 1;
+            text-align: center;
+            font-size: 13px;
+        }
+        .forecast-temp {
+            font-weight: 600;
+        }
+        .loading, .error {
+            text-align: center;
+            padding: 20px;
+            color: #1c1c1e;
+        }
+        body.dark .loading, body.dark .error {
+            color: #f5f5f7;
+        }
+        /* Адаптивность */
+        @media (max-width: 450px) {
+            .ios-widget {
+                border-radius: 28px;
+                padding: 16px;
+            }
+            .temp {
+                font-size: 52px;
+            }
+            .weather-icon {
+                font-size: 48px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="widgetContainer"></div>
+    <script>
+        // Параметры из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        let city = urlParams.get('city') || 'auto';
+        const theme = urlParams.get('theme') || 'light'; // light / dark
+        const size = urlParams.get('size') || 'full'; // full / compact
+
+        if (theme === 'dark') document.body.classList.add('dark');
+
+        const API_KEY = "c2f9cfdd2cb513c0f812f89130d91f2b";
+
+        async function fetchWeather(cityName) {
+            try {
+                const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${cityName}&appid=${API_KEY}&units=metric&lang=ru`);
+                const weather = await weatherRes.json();
+                if (weather.cod !== 200) throw new Error(weather.message);
+                const forecastRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${cityName}&appid=${API_KEY}&units=metric&lang=ru`);
+                const forecast = await forecastRes.json();
+                return { weather, forecast: forecast.list };
+            } catch (err) {
+                throw err;
+            }
+        }
+
+        async function getCityByIP() {
+            try {
+                const res = await fetch('http://ip-api.com/json/');
+                const data = await res.json();
+                if (data.status === 'success' && data.city) return data.city;
+                return 'Moscow';
+            } catch {
+                return 'Moscow';
+            }
+        }
+
+        function getWeatherIcon(code) {
+            const icons = {
+                "01d": "☀️", "01n": "🌙", "02d": "⛅", "02n": "☁️",
+                "03d": "☁️", "03n": "☁️", "04d": "☁️", "04n": "☁️",
+                "09d": "🌧️", "09n": "🌧️", "10d": "🌦️", "10n": "🌧️",
+                "11d": "⛈️", "11n": "⛈️", "13d": "❄️", "13n": "❄️",
+                "50d": "🌫️", "50n": "🌫️"
+            };
+            return icons[code] || "🌡️";
+        }
+
+        function getDayOfWeek(dateStr) {
+            const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+            const date = new Date(dateStr);
+            return days[date.getDay()];
+        }
+
+        function renderWidget(weatherData, forecastList) {
+            const container = document.getElementById('widgetContainer');
+            const widgetClass = size === 'compact' ? 'ios-widget compact' : 'ios-widget';
+            // берём ближайшие 5 дней из прогноза (исключая сегодня)
+            const today = new Date().toISOString().split('T')[0];
+            const daily = {};
+            forecastList.forEach(item => {
+                const date = item.dt_txt.split(' ')[0];
+                if (date === today) return;
+                if (!daily[date]) daily[date] = { temps: [], icon: null };
+                daily[date].temps.push(item.main.temp);
+                if (!daily[date].icon) daily[date].icon = item.weather[0].icon;
+            });
+            const dailyForecast = Object.keys(daily).slice(0, 4).map(date => ({
+                day: getDayOfWeek(date),
+                temp: Math.round(daily[date].temps.reduce((a,b)=>a+b,0)/daily[date].temps.length),
+                icon: getWeatherIcon(daily[date].icon)
+            }));
+
+            const html = `
+                <div class="${widgetClass}">
+                    <div class="widget-header">
+                        <span class="city-name">${weatherData.name}</span>
+                        <span style="font-size:13px">${new Date(weatherData.dt * 1000).toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})}</span>
+                    </div>
+                    <div class="temp-block">
+                        <div class="temp">${Math.round(weatherData.main.temp)}°</div>
+                        <div class="weather-icon">${getWeatherIcon(weatherData.weather[0].icon)}</div>
+                    </div>
+                    <div class="details">
+                        <span>💧 ${weatherData.main.humidity}%</span>
+                        <span>💨 ${weatherData.wind.speed.toFixed(1)} м/с</span>
+                        <span>🌡️ ${Math.round(weatherData.main.feels_like)}°</span>
+                    </div>
+                    ${size !== 'compact' ? `
+                    <div class="forecast">
+                        ${dailyForecast.map(day => `
+                            <div class="forecast-day">
+                                <div>${day.day}</div>
+                                <div style="font-size:22px">${day.icon}</div>
+                                <div class="forecast-temp">${day.temp}°</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        async function init() {
+            const widgetContainer = document.getElementById('widgetContainer');
+            widgetContainer.innerHTML = '<div class="loading">Загрузка погоды...</div>';
+            try {
+                let targetCity = city;
+                if (city === 'auto') {
+                    targetCity = await getCityByIP();
+                }
+                const { weather, forecast } = await fetchWeather(targetCity);
+                renderWidget(weather, forecast);
+            } catch (err) {
+                widgetContainer.innerHTML = `<div class="error">❌ Не удалось загрузить погоду</div>`;
+                console.error(err);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

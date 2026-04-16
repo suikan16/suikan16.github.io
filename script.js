@@ -449,3 +449,28 @@ openDB().then(() => {
     backBtn.addEventListener("click", goBackToSplit);
     themeBtn.addEventListener("click", toggleTheme);
 }).catch(console.error);
+
+// Генерация кода виджета
+const generateBtn = document.getElementById('generateWidgetBtn');
+if (generateBtn) {
+    generateBtn.addEventListener('click', () => {
+        let city = document.getElementById('widgetCity').value.trim();
+        const theme = document.getElementById('widgetTheme').value;
+        const size = document.getElementById('widgetSize').value;
+        let url = `${window.location.origin}/widget.html?theme=${theme}&size=${size}`;
+        if (city) url += `&city=${encodeURIComponent(city)}`;
+        else url += `&city=auto`;
+        const iframeCode = `<iframe src="${url}" width="100%" height="${size === 'compact' ? '280' : '380'}" frameborder="0" scrolling="no" style="border-radius: 44px; max-width: 450px; margin: 0 auto; display: block;"></iframe>`;
+        document.getElementById('widgetCode').value = iframeCode;
+        document.getElementById('widgetCodeContainer').style.display = 'block';
+    });
+}
+const copyBtn = document.getElementById('copyWidgetCode');
+if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+        const codeArea = document.getElementById('widgetCode');
+        codeArea.select();
+        document.execCommand('copy');
+        alert('Код скопирован в буфер обмена');
+    });
+}

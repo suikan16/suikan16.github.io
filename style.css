@@ -953,3 +953,38 @@ body.dark .favorite-btn.active {
         padding: 6px 10px;
     }
 }
+.embed-card {
+    background: var(--card-bg);
+    border-radius: 28px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    margin-top: 12px;
+}
+.embed-field {
+    margin-bottom: 12px;
+}
+.embed-field label {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+}
+.embed-field input, .embed-field select {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-primary);
+}
+.generate-btn {
+    width: 100%;
+    margin-top: 8px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 40px;
+    padding: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}

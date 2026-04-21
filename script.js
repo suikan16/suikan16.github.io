@@ -2,7 +2,7 @@ const API_KEY = "c2f9cfdd2cb513c0f812f89130d91f2b";
 const WEATHER_CACHE_TTL = 3 * 60 * 60 * 1000;
 const IP_CACHE_TTL = 60 * 60 * 1000;
 const DB_NAME = "WeatherDB";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let db = null;
 
 function openDB() {
@@ -20,6 +20,10 @@ function openDB() {
             }
             if (!db.objectStoreNames.contains("ipCity")) {
                 db.createObjectStore("ipCity", { keyPath: "id" });
+            }
+            if (!db.objectStoreNames.contains("weatherDiary")) {
+                db.createObjectStore("weatherDiary", { keyPath: "id" });
+                console.log("Хранилище дневника создано");
             }
         };
     });
@@ -114,7 +118,7 @@ async function getCityByIP() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
     try {
-        const response = await fetch("http://ip-api.com/json/", { signal: controller.signal });
+        const response = await fetch("https://ip-api.com/json/", { signal: controller.signal });
         clearTimeout(timeoutId);
         const data = await response.json();
         if (data.status === "success" && data.city) {
@@ -127,7 +131,6 @@ async function getCityByIP() {
 
 let currentChart = null;
 
-// Исправленные функции для локального времени (с использованием смещения timezone в секундах)
 function formatDateLocal(timestamp, timezoneOffset) {
     if (timezoneOffset === undefined || timezoneOffset === null) return "—";
     let localSec = timestamp + timezoneOffset;
@@ -152,10 +155,6 @@ function formatTimeLocal(timestamp, timezoneOffset) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-}
-
-function formatVisibility(meters) {
-    return meters >= 1000 ? `${(meters / 1000).toFixed(1)} км` : `${meters} м`;
 }
 
 const weatherIcons = {
@@ -269,9 +268,6 @@ function renderWeatherToContainer(weatherData, forecastList, containerId) {
     if (!container) return;
     
     const timezoneOffset = weatherData.timezone;
-    if (timezoneOffset === undefined) {
-        console.warn("Нет timezone в данных погоды");
-    }
     const rec = getRecommendation(weatherData);
     const hourlyData = forecastList.filter(item => item.dt > Math.floor(Date.now() / 1000)).slice(0, 24);
     const isFavorite = favorites.includes(weatherData.name);
@@ -427,32 +423,226 @@ function toggleTheme() {
     }
 }
 
-openDB().then(() => {
-    loadFavorites();
-    loadLocationWeather();
-    initTheme();
-    const searchBtn = document.getElementById("searchBtn");
-    const cityInput = document.getElementById("cityInput");
-    const backBtn = document.getElementById("backBtn");
-    const themeBtn = document.getElementById("themeToggle");
-    searchBtn.addEventListener("click", () => {
-        const city = cityInput.value.trim();
-        if (!city) { alert("Введите название города"); return; }
-        searchAndShowFull(city);
-    });
-    cityInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-            const city = cityInput.value.trim();
-            if (city) searchAndShowFull(city);
-        }
-    });
-    backBtn.addEventListener("click", goBackToSplit);
-    themeBtn.addEventListener("click", toggleTheme);
-}).catch(console.error);
+// ========== ПОГОДНЫЙ ДНЕВНИК ==========
+const DIARY_STORE = "weatherDiary";
 
-// Генерация кода виджета
-const generateBtn = document.getElementById('generateWidgetBtn');
-if (generateBtn) {
+async function getDiaryEntry(date) {
+    if (!db) return null;
+    if (!db.objectStoreNames.contains(DIARY_STORE)) return null;
+    
+    return new Promise((resolve) => {
+        const tx = db.transaction(DIARY_STORE, 'readonly');
+        const store = tx.objectStore(DIARY_STORE);
+        const request = store.get(date);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => resolve(null);
+    });
+}
+
+async function getCurrentWeatherForDiary() {
+    const cityName = document.querySelector('.city-header h2')?.innerText;
+    if (cityName && cityName !== '--') {
+        try {
+            const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${cityName}&appid=${API_KEY}&units=metric&lang=ru`);
+            const data = await response.json();
+            if (data.cod === 200) {
+                return {
+                    temp: Math.round(data.main.temp),
+                    description: data.weather[0].description,
+                    humidity: data.main.humidity,
+                    pressure: Math.round(data.main.pressure * 0.750062)
+                };
+            }
+        } catch(e) {}
+    }
+    return { temp: '--', description: '--', humidity: '--', pressure: '--' };
+}
+
+async function saveDiaryEntry() {
+    const selectedMood = document.querySelector('.mood-btn.selected')?.dataset.mood;
+    if (!selectedMood) {
+        alert('Пожалуйста, оцените ваше самочувствие');
+        return;
+    }
+    
+    const symptoms = Array.from(document.querySelectorAll('.symptoms-grid input:checked')).map(cb => cb.value);
+    const badSleep = document.getElementById('badSleep')?.checked || false;
+    const medications = document.getElementById('medications')?.checked || false;
+    const today = new Date().toISOString().split('T')[0];
+    const currentWeather = await getCurrentWeatherForDiary();
+    
+    const entry = {
+        id: today,
+        date: today,
+        mood: parseInt(selectedMood),
+        symptoms,
+        badSleep,
+        medications,
+        weather: currentWeather,
+        timestamp: Date.now()
+    };
+    
+    if (!db || !db.objectStoreNames.contains(DIARY_STORE)) return;
+    
+    const tx = db.transaction(DIARY_STORE, 'readwrite');
+    const store = tx.objectStore(DIARY_STORE);
+    store.put(entry);
+    tx.oncomplete = () => {
+        alert('Запись сохранена!');
+        loadDiaryStats();
+        updateDiaryPreview();
+        closeDiary();
+    };
+    tx.onerror = () => alert('Ошибка сохранения');
+}
+
+async function loadDiaryStats() {
+    const container = document.getElementById('diaryStats');
+    if (!container) return;
+    
+    if (!db || !db.objectStoreNames.contains(DIARY_STORE)) {
+        container.innerHTML = '<p class="forecast-loading">Нет записей. Начните вести дневник!</p>';
+        return;
+    }
+    
+    const tx = db.transaction(DIARY_STORE, 'readonly');
+    const store = tx.objectStore(DIARY_STORE);
+    const allEntries = await new Promise((resolve) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve([]);
+    });
+    
+    if (allEntries.length === 0) {
+        container.innerHTML = '<p class="forecast-loading">Нет записей. Начните вести дневник!</p>';
+        return;
+    }
+    
+    const avgMood = allEntries.reduce((sum, e) => sum + e.mood, 0) / allEntries.length;
+    const headacheDays = allEntries.filter(e => e.symptoms.includes('headache')).length;
+    
+    container.innerHTML = `
+        <div style="background: var(--detail-bg); border-radius: 20px; padding: 12px; margin-top: 12px;">
+            <p>📊 Записей: ${allEntries.length}</p>
+            <p>😊 Среднее самочувствие: ${avgMood.toFixed(1)} / 5</p>
+            <p>🤕 Головная боль: в ${headacheDays} днях</p>
+            <p style="font-size: 12px; margin-top: 8px;">💡 Совет: регулярные записи помогут увидеть связь между погодой и вашим состоянием</p>
+        </div>
+    `;
+}
+
+async function updateDiaryPreview() {
+    const preview = document.getElementById('diaryPreview');
+    if (!preview) return;
+    
+    if (!db || !db.objectStoreNames.contains(DIARY_STORE)) {
+        preview.innerHTML = '<p class="diary-preview-text">Начните вести дневник самочувствия</p>';
+        return;
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const entry = await getDiaryEntry(today);
+    
+    if (entry) {
+        const moodText = {5:'Отлично',4:'Хорошо',3:'Нормально',2:'Плохо',1:'Ужасно'}[entry.mood];
+        preview.innerHTML = `<p class="diary-preview-text">✅ Сегодня: ${moodText}${entry.symptoms.length ? `, беспокоит: ${entry.symptoms.join(', ')}` : ''}</p>`;
+    } else {
+        preview.innerHTML = '<p class="diary-preview-text">📝 Сегодня вы ещё не вели дневник</p>';
+    }
+}
+
+async function loadDiaryForm() {
+    const container = document.getElementById('diaryFormContainer');
+    if (!container) return;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const existingEntry = await getDiaryEntry(today);
+    const currentWeather = await getCurrentWeatherForDiary();
+    
+    container.innerHTML = `
+        <div class="diary-form-group">
+            <label>📅 ${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</label>
+            <div class="diary-weather-info" style="background: var(--detail-bg); padding: 12px; border-radius: 20px; margin-top: 8px;">
+                🌡️ ${currentWeather.temp}°C, ${currentWeather.description}, 💧 ${currentWeather.humidity}%, 🌡️ ${currentWeather.pressure} мм рт. ст.
+            </div>
+        </div>
+        
+        <div class="diary-form-group">
+            <label>Как вы себя чувствуете?</label>
+            <div class="mood-buttons" id="moodButtons">
+                <button data-mood="5" class="mood-btn ${existingEntry?.mood === 5 ? 'selected' : ''}">😊 Отлично</button>
+                <button data-mood="4" class="mood-btn ${existingEntry?.mood === 4 ? 'selected' : ''}">🙂 Хорошо</button>
+                <button data-mood="3" class="mood-btn ${existingEntry?.mood === 3 ? 'selected' : ''}">😐 Нормально</button>
+                <button data-mood="2" class="mood-btn ${existingEntry?.mood === 2 ? 'selected' : ''}">😕 Плохо</button>
+                <button data-mood="1" class="mood-btn ${existingEntry?.mood === 1 ? 'selected' : ''}">😫 Ужасно</button>
+            </div>
+        </div>
+        
+        <div class="diary-form-group">
+            <label>Что вас беспокоит?</label>
+            <div class="symptoms-grid">
+                <label class="symptom-checkbox"><input type="checkbox" value="headache" ${existingEntry?.symptoms?.includes('headache') ? 'checked' : ''}> Головная боль</label>
+                <label class="symptom-checkbox"><input type="checkbox" value="pressure" ${existingEntry?.symptoms?.includes('pressure') ? 'checked' : ''}> Скачки давления</label>
+                <label class="symptom-checkbox"><input type="checkbox" value="joints" ${existingEntry?.symptoms?.includes('joints') ? 'checked' : ''}> Боль в суставах</label>
+                <label class="symptom-checkbox"><input type="checkbox" value="fatigue" ${existingEntry?.symptoms?.includes('fatigue') ? 'checked' : ''}> Усталость</label>
+                <label class="symptom-checkbox"><input type="checkbox" value="insomnia" ${existingEntry?.symptoms?.includes('insomnia') ? 'checked' : ''}> Бессонница</label>
+                <label class="symptom-checkbox"><input type="checkbox" value="irritability" ${existingEntry?.symptoms?.includes('irritability') ? 'checked' : ''}> Раздражительность</label>
+            </div>
+        </div>
+        
+        <div class="diary-form-group">
+            <label>Дополнительно</label>
+            <label class="symptom-checkbox"><input type="checkbox" id="badSleep" ${existingEntry?.badSleep ? 'checked' : ''}> Плохо спал(а)</label>
+            <label class="symptom-checkbox"><input type="checkbox" id="medications" ${existingEntry?.medications ? 'checked' : ''}> Принимал(а) лекарства</label>
+        </div>
+        
+        <button class="diary-save-btn" onclick="saveDiaryEntry()">💾 Сохранить запись</button>
+        
+        <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <h4>📊 Ваша статистика</h4>
+            <div id="diaryStats">Загрузка...</div>
+        </div>
+    `;
+    
+    document.querySelectorAll('.mood-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        });
+    });
+    
+    loadDiaryStats();
+}
+
+function openDiary() {
+    const modal = document.createElement('div');
+    modal.className = 'diary-modal';
+    modal.id = 'diaryModal';
+    modal.innerHTML = `
+        <div class="diary-modal-content">
+            <div class="diary-modal-header">
+                <h3>📓 Погодный дневник</h3>
+                <button class="diary-close-btn" onclick="closeDiary()">✕</button>
+            </div>
+            <div id="diaryFormContainer">
+                <div class="loading-container"><div class="loading-spinner"></div><p>Загрузка...</p></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    loadDiaryForm();
+}
+
+function closeDiary() {
+    const modal = document.getElementById('diaryModal');
+    if (modal) modal.remove();
+}
+
+// ========== ГЕНЕРАЦИЯ ВИДЖЕТА ==========
+function initWidgetGenerator() {
+    const generateBtn = document.getElementById('generateWidgetBtn');
+    if (!generateBtn) return;
+    
     generateBtn.addEventListener('click', () => {
         let city = document.getElementById('widgetCity').value.trim();
         const theme = document.getElementById('widgetTheme').value;
@@ -464,13 +654,49 @@ if (generateBtn) {
         document.getElementById('widgetCode').value = iframeCode;
         document.getElementById('widgetCodeContainer').style.display = 'block';
     });
+    
+    const copyBtn = document.getElementById('copyWidgetCode');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            const codeArea = document.getElementById('widgetCode');
+            codeArea.select();
+            document.execCommand('copy');
+            alert('Код скопирован в буфер обмена');
+        });
+    }
 }
-const copyBtn = document.getElementById('copyWidgetCode');
-if (copyBtn) {
-    copyBtn.addEventListener('click', () => {
-        const codeArea = document.getElementById('widgetCode');
-        codeArea.select();
-        document.execCommand('copy');
-        alert('Код скопирован в буфер обмена');
+
+// ========== ИНИЦИАЛИЗАЦИЯ ==========
+openDB().then(() => {
+    loadFavorites();
+    loadLocationWeather();
+    initTheme();
+    initWidgetGenerator();
+    updateDiaryPreview();
+    
+    const openDiaryBtn = document.getElementById('openDiaryBtn');
+    if (openDiaryBtn) {
+        openDiaryBtn.addEventListener('click', openDiary);
+    }
+    
+    const searchBtn = document.getElementById("searchBtn");
+    const cityInput = document.getElementById("cityInput");
+    const backBtn = document.getElementById("backBtn");
+    const themeBtn = document.getElementById("themeToggle");
+    
+    searchBtn.addEventListener("click", () => {
+        const city = cityInput.value.trim();
+        if (!city) { alert("Введите название города"); return; }
+        searchAndShowFull(city);
     });
-}
+    
+    cityInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+            const city = cityInput.value.trim();
+            if (city) searchAndShowFull(city);
+        }
+    });
+    
+    backBtn.addEventListener("click", goBackToSplit);
+    themeBtn.addEventListener("click", toggleTheme);
+}).catch(console.error);

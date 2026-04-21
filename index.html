@@ -57,12 +57,12 @@
                 <div class="favorites-card">
                     <div class="favorites-header">
                         <span>⭐ Избранное</span>
-                        <!-- кнопка темы удалена отсюда -->
                     </div>
                     <div class="favorites-list" id="favoritesList">
                         <p class="favorites-empty">Нет избранных городов</p>
                     </div>
                 </div>
+
                 <!-- Виджет для сайта -->
                 <div class="embed-card">
                     <div class="favorites-header" style="justify-content: space-between;">
@@ -93,6 +93,17 @@
                         <label style="font-weight: 600;">Код для вставки на ваш сайт:</label>
                         <textarea id="widgetCode" rows="3" readonly style="width:100%; background: var(--detail-bg); border-radius:16px; padding:12px; margin-top:8px; font-family:monospace; font-size:12px;"></textarea>
                         <button id="copyWidgetCode" style="margin-top: 8px; background: #667eea; padding: 8px 16px;">Копировать</button>
+                    </div>
+                </div>
+
+                <!-- Погодный дневник -->
+                <div class="diary-card">
+                    <div class="favorites-header" style="justify-content: space-between;">
+                        <span>📓 Погодный дневник</span>
+                        <button id="openDiaryBtn" class="diary-open-btn">Открыть</button>
+                    </div>
+                    <div class="diary-preview" id="diaryPreview">
+                        <p class="diary-preview-text">Сегодня вы ещё не вели дневник</p>
                     </div>
                 </div>
             </div>

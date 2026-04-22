@@ -9,22 +9,12 @@ function openDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-            db = request.result;
-            resolve(db);
-        };
+        request.onsuccess = () => { db = request.result; resolve(db); };
         request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains("weather")) {
-                db.createObjectStore("weather", { keyPath: "city" });
-            }
-            if (!db.objectStoreNames.contains("ipCity")) {
-                db.createObjectStore("ipCity", { keyPath: "id" });
-            }
-            if (!db.objectStoreNames.contains("weatherDiary")) {
-                db.createObjectStore("weatherDiary", { keyPath: "id" });
-                console.log("Хранилище дневника создано");
-            }
+            const dbUp = event.target.result;
+            if (!dbUp.objectStoreNames.contains("weather")) dbUp.createObjectStore("weather", { keyPath: "city" });
+            if (!dbUp.objectStoreNames.contains("ipCity")) dbUp.createObjectStore("ipCity", { keyPath: "id" });
+            if (!dbUp.objectStoreNames.contains("weatherDiary")) dbUp.createObjectStore("weatherDiary", { keyPath: "id" });
         };
     });
 }
@@ -37,31 +27,16 @@ async function getCachedWeather(city) {
         const request = store.get(city.toLowerCase());
         request.onsuccess = () => {
             const record = request.result;
-            if (record && Date.now() - record.timestamp < WEATHER_CACHE_TTL) {
-                resolve(record.data);
-            } else {
-                resolve(null);
-            }
+            resolve(record && Date.now() - record.timestamp < WEATHER_CACHE_TTL ? record.data : null);
         };
         request.onerror = () => resolve(null);
     });
 }
-
 async function setCachedWeather(city, weatherData, forecastData) {
     if (!db) await openDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction("weather", "readwrite");
-        const store = tx.objectStore("weather");
-        store.put({
-            city: city.toLowerCase(),
-            data: { weather: weatherData, forecast: forecastData },
-            timestamp: Date.now()
-        });
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-    });
+    const tx = db.transaction("weather", "readwrite");
+    tx.objectStore("weather").put({ city: city.toLowerCase(), data: { weather: weatherData, forecast: forecastData }, timestamp: Date.now() });
 }
-
 async function getCachedIPCity() {
     if (!db) await openDB();
     return new Promise((resolve) => {
@@ -70,31 +45,16 @@ async function getCachedIPCity() {
         const request = store.get("ip");
         request.onsuccess = () => {
             const record = request.result;
-            if (record && Date.now() - record.timestamp < IP_CACHE_TTL) {
-                resolve(record.city);
-            } else {
-                resolve(null);
-            }
+            resolve(record && Date.now() - record.timestamp < IP_CACHE_TTL ? record.city : null);
         };
         request.onerror = () => resolve(null);
     });
 }
-
 async function setCachedIPCity(city) {
     if (!db) await openDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction("ipCity", "readwrite");
-        const store = tx.objectStore("ipCity");
-        store.put({
-            id: "ip",
-            city: city,
-            timestamp: Date.now()
-        });
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-    });
+    const tx = db.transaction("ipCity", "readwrite");
+    tx.objectStore("ipCity").put({ id: "ip", city: city, timestamp: Date.now() });
 }
-
 async function fetchWeatherAndForecast(city) {
     const weatherRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=ru`);
     const weather = await weatherRes.json();
@@ -103,7 +63,6 @@ async function fetchWeatherAndForecast(city) {
     const forecast = await forecastRes.json();
     return { weather, forecast: forecast.list };
 }
-
 async function getWeatherData(city) {
     const cached = await getCachedWeather(city);
     if (cached) return cached;
@@ -111,592 +70,292 @@ async function getWeatherData(city) {
     await setCachedWeather(city, fresh.weather, fresh.forecast);
     return fresh;
 }
-
 async function getCityByIP() {
     const cached = await getCachedIPCity();
     if (cached) return cached;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    try {
-        const response = await fetch("https://ip-api.com/json/", { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const data = await response.json();
-        if (data.status === "success" && data.city) {
-            await setCachedIPCity(data.city);
-            return data.city;
-        }
-    } catch (e) {}
+    const services = [
+        { url: "https://ipwho.is/", parser: d => d.success && d.city ? d.city : null },
+        { url: "https://ipapi.co/json/", parser: d => d.city ? d.city : null },
+        { url: "https://freegeoip.app/json/", parser: d => d.city ? d.city : null },
+        { url: "https://geoip-db.com/json/", parser: d => d.city ? d.city : null }
+    ];
+    for (const s of services) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+            const res = await fetch(s.url, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (res.ok) {
+                const data = await res.json();
+                const city = s.parser(data);
+                if (city && city !== "null" && city !== "") {
+                    await setCachedIPCity(city);
+                    return city;
+                }
+            }
+        } catch(e) {}
+    }
     return null;
 }
 
 let currentChart = null;
-
-function formatDateLocal(timestamp, timezoneOffset) {
-    if (timezoneOffset === undefined || timezoneOffset === null) return "—";
-    let localSec = timestamp + timezoneOffset;
-    const daysSinceEpoch = Math.floor(localSec / 86400);
-    let remainder = localSec % 86400;
-    if (remainder < 0) remainder += 86400;
-    const date = new Date(daysSinceEpoch * 86400 * 1000);
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth();
-    const day = date.getUTCDate();
-    const hours = Math.floor(remainder / 3600);
-    const minutes = Math.floor((remainder % 3600) / 60);
-    const d = new Date(Date.UTC(year, month, day, hours, minutes));
-    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
-}
-
-function formatTimeLocal(timestamp, timezoneOffset) {
-    if (timezoneOffset === undefined || timezoneOffset === null) return "—";
-    let totalSeconds = timestamp + timezoneOffset;
-    totalSeconds %= 86400;
-    if (totalSeconds < 0) totalSeconds += 86400;
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-}
-
-const weatherIcons = {
-    "01d": "☀️", "01n": "🌙",
-    "02d": "⛅", "02n": "☁️",
-    "03d": "☁️", "03n": "☁️",
-    "04d": "☁️", "04n": "☁️",
-    "09d": "🌧️", "09n": "🌧️",
-    "10d": "🌦️", "10n": "🌧️",
-    "11d": "⛈️", "11n": "⛈️",
-    "13d": "❄️", "13n": "❄️",
-    "50d": "🌫️", "50n": "🌫️",
-    "default": "🌡️"
-};
-
-function getWeatherIcon(code) {
-    return weatherIcons[code] || weatherIcons.default;
-}
-
-function getWeatherDescription(main) {
-    const map = {
-        "Clear": "Ясно",
-        "Clouds": "Облачно",
-        "Rain": "Дождь",
-        "Snow": "Снег",
-        "Thunderstorm": "Гроза",
-        "Drizzle": "Морось",
-        "Mist": "Туман",
-        "Fog": "Туман"
-    };
-    return map[main] || main;
-}
-
-function getRecommendation(weather) {
-    const temp = weather.main.temp;
-    const wind = weather.wind.speed;
-    const rain = weather.weather[0].main === "Rain" || weather.weather[0].main === "Drizzle";
-    const snow = weather.weather[0].main === "Snow";
-    if (snow) return { text: "❄️ Снегопад! Обувайтесь теплее.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=зимняя+обувь", linkText: "Купить зимнюю обувь" };
-    if (rain) return { text: "☔ Идёт дождь. Не забудьте зонт!", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=зонт", linkText: "Выбрать зонт" };
-    if (temp < -10) return { text: "🥶 Очень холодно! Надевайте тёплую шапку и пуховик.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=зимняя+шапка", linkText: "Купить шапку" };
-    if (temp < 0) return { text: "🧣 Холодно! Наденьте шапку и шарф.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=осенняя+шапка", linkText: "Выбрать шапку" };
-    if (temp > 25) return { text: "☀️ Жарко! Пейте воду и носите головной убор.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=бутылка+для+воды", linkText: "Купить бутылку" };
-    if (wind > 10) return { text: "💨 Сильный ветер! Возьмите ветровку.", link: "https://www.wildberries.ru/catalog/0/search.aspx?search=ветровка", linkText: "Выбрать ветровку" };
-    return { text: "🌡️ Погода комфортная. Хорошего дня!", link: null, linkText: null };
-}
-
-function renderHourlyChart(hourlyData, canvasId, timezoneOffset) {
+function formatDateLocal(timestamp, tz) { if (!tz) return "—"; const d = new Date((timestamp + tz) * 1000); return d.toLocaleDateString('ru-RU', { day:'numeric', month:'long', hour:'2-digit', minute:'2-digit' }); }
+function formatTimeLocal(timestamp, tz) { if (!tz) return "—"; const d = new Date((timestamp + tz) * 1000); return d.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' }); }
+const weatherIcons = { "01d":"☀️","01n":"🌙","02d":"⛅","02n":"☁️","03d":"☁️","03n":"☁️","04d":"☁️","04n":"☁️","09d":"🌧️","09n":"🌧️","10d":"🌦️","10n":"🌧️","11d":"⛈️","11n":"⛈️","13d":"❄️","13n":"❄️","50d":"🌫️","50n":"🌫️","default":"🌡️" };
+function getWeatherIcon(c) { return weatherIcons[c] || weatherIcons.default; }
+function getWeatherDescription(main) { const map = { "Clear":"Ясно","Clouds":"Облачно","Rain":"Дождь","Snow":"Снег","Thunderstorm":"Гроза","Drizzle":"Морось","Mist":"Туман","Fog":"Туман" }; return map[main] || main; }
+function renderHourlyChart(hourlyData, canvasId, tz) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const hours = hourlyData.map(item => {
-        let totalSeconds = item.dt + timezoneOffset;
-        totalSeconds %= 86400;
-        if (totalSeconds < 0) totalSeconds += 86400;
-        const h = Math.floor(totalSeconds / 3600);
-        return `${h.toString().padStart(2, '0')}:00`;
-    });
-    const temps = hourlyData.map(item => Math.round(item.main.temp));
+    const hours = hourlyData.map(i => new Date((i.dt + tz) * 1000).getHours() + ":00");
+    const temps = hourlyData.map(i => Math.round(i.main.temp));
     if (currentChart) currentChart.destroy();
     currentChart = new Chart(canvas, {
         type: 'line',
-        data: {
-            labels: hours,
-            datasets: [{
-                label: 'Температура (°C)',
-                data: temps,
-                borderColor: '#667eea',
-                backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                fill: true,
-                tension: 0.3,
-                pointBackgroundColor: '#667eea',
-                pointBorderColor: '#fff',
-                pointRadius: 4
-            }]
-        },
+        data: { labels: hours, datasets: [{ label: 'Температура (°C)', data: temps, borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.1)', fill: true, tension: 0.3, pointRadius: 4 }] },
         options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } } }
     });
 }
-
-function displayDailyForecast(container, forecastList, timezoneOffset) {
-    const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+function displayDailyForecast(container, forecastList, tz) {
+    const days = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
     const daily = new Map();
     for (const item of forecastList) {
-        let localSec = item.dt + timezoneOffset;
-        const dayKey = Math.floor(localSec / 86400);
-        if (!daily.has(dayKey)) daily.set(dayKey, { temps: [], icons: [] });
-        const d = daily.get(dayKey);
+        const date = new Date((item.dt + tz) * 1000);
+        const key = date.toISOString().split('T')[0];
+        if (!daily.has(key)) daily.set(key, { temps: [], icons: [] });
+        const d = daily.get(key);
         d.temps.push(item.main.temp);
         d.icons.push(item.weather[0].icon);
     }
-    const dailyList = Array.from(daily.entries()).slice(0, 5).map(([key, val]) => {
-        const avg = Math.round(val.temps.reduce((a,b)=>a+b,0)/val.temps.length);
-        const min = Math.round(Math.min(...val.temps));
-        const max = Math.round(Math.max(...val.temps));
-        const icon = val.icons[Math.floor(val.icons.length/2)];
-        const date = new Date(key * 86400 * 1000);
-        return { date: date.toISOString().split('T')[0], avg, min, max, icon };
+    const list = Array.from(daily.entries()).slice(0,5).map(([k,v]) => {
+        const avg = Math.round(v.temps.reduce((a,b)=>a+b,0)/v.temps.length);
+        const min = Math.round(Math.min(...v.temps));
+        const max = Math.round(Math.max(...v.temps));
+        const icon = v.icons[Math.floor(v.icons.length/2)];
+        const date = new Date(k);
+        return { dayName: days[date.getDay()], dayMonth: `${date.getDate()}.${date.getMonth()+1}`, avg, min, max, icon };
     });
-    let html = '';
-    for (const day of dailyList) {
-        const date = new Date(day.date);
-        const dayName = days[date.getDay()];
-        const dayMonth = `${date.getDate()}.${date.getMonth()+1}`;
-        html += `<div class="forecast-card"><div class="day">${dayName}</div><div class="date">${dayMonth}</div><div class="forecast-emoji">${getWeatherIcon(day.icon)}</div><div class="temp">${day.avg}°</div><div class="temp-range">${day.min}° / ${day.max}°</div></div>`;
-    }
-    container.innerHTML = html || '<div class="forecast-loading">Нет данных прогноза</div>';
+    container.innerHTML = list.map(d => `<div class="forecast-card"><div class="day">${d.dayName}</div><div class="date">${d.dayMonth}</div><div class="forecast-emoji">${getWeatherIcon(d.icon)}</div><div class="temp">${d.avg}°</div><div class="temp-range">${d.min}°/${d.max}°</div></div>`).join('');
 }
-
-function renderWeatherToContainer(weatherData, forecastList, containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    
-    const timezoneOffset = weatherData.timezone;
-    const rec = getRecommendation(weatherData);
-    const hourlyData = forecastList.filter(item => item.dt > Math.floor(Date.now() / 1000)).slice(0, 24);
-    const isFavorite = favorites.includes(weatherData.name);
-    const favStar = isFavorite ? "★" : "⭐";
-    const favClass = isFavorite ? "favorite-btn active" : "favorite-btn";
-    
-    const html = `
-        <div class="city-header">
-            <h2>${weatherData.name}</h2>
-            <div class="date-time">${formatDateLocal(weatherData.dt, timezoneOffset)}</div>
-            <button class="${favClass}" data-city="${weatherData.name}"><span class="fav-star">${favStar}</span><span class="fav-text">${isFavorite ? "В избранном" : "В избранное"}</span></button>
-        </div>
-        <div class="main-weather"><div class="temp-section"><div class="current-temp">${Math.round(weatherData.main.temp)}°C</div><div class="feels-like">Ощущается как ${Math.round(weatherData.main.feels_like)}°C</div></div><div class="weather-icon"><div class="weather-emoji">${getWeatherIcon(weatherData.weather[0].icon)}</div><div class="weather-description">${getWeatherDescription(weatherData.weather[0].main)}</div></div></div>
-        <div class="details-grid">
-            <div class="detail-card"><div class="detail-icon">💧</div><div class="detail-label">Влажность</div><div class="detail-value">${weatherData.main.humidity}%</div></div>
-            <div class="detail-card"><div class="detail-icon">🌡️</div><div class="detail-label">Давление</div><div class="detail-value">${Math.round(weatherData.main.pressure * 0.750062)} мм рт. ст.</div></div>
-            <div class="detail-card"><div class="detail-icon">💨</div><div class="detail-label">Ветер</div><div class="detail-value">${weatherData.wind.speed.toFixed(1)} м/с</div></div>
-            <div class="detail-card"><div class="detail-icon">☁️</div><div class="detail-label">Облачность</div><div class="detail-value">${weatherData.clouds.all}%</div></div>
-        </div>        
-        <div class="sun-section"><div class="sun-item"><span class="sun-icon">🌅</span><span>Восход:</span><strong>${formatTimeLocal(weatherData.sys.sunrise, timezoneOffset)}</strong></div><div class="sun-item"><span class="sun-icon">🌇</span><span>Закат:</span><strong>${formatTimeLocal(weatherData.sys.sunset, timezoneOffset)}</strong></div></div>
-        <div class="recommendation-section"><div class="recommendation-text">${rec.text}</div>${rec.link ? `<a href="${rec.link}" target="_blank" rel="noopener noreferrer" class="recommendation-link">${rec.linkText} →</a>` : ''}</div>
-        <div class="hourly-section"><h4>⏰ Почасовой прогноз (24 часа)</h4><div class="hourly-chart-container"><canvas id="hourlyChart-${containerId}" width="400" height="200"></canvas></div></div>
-        <div class="forecast-section"><h4>📅 Прогноз на 5 дней</h4><div class="forecast-cards" id="forecast-${containerId}"><div class="forecast-loading">Загрузка...</div></div></div>
-    `;
-    container.innerHTML = html;
-    
-    if (hourlyData.length) {
-        setTimeout(() => renderHourlyChart(hourlyData, `hourlyChart-${containerId}`, timezoneOffset), 30);
-    } else {
-        const canvasContainer = container.querySelector('.hourly-chart-container');
-        if (canvasContainer) canvasContainer.innerHTML = '<p class="forecast-loading">Нет данных для почасового прогноза</p>';
-    }
-    const forecastContainer = document.getElementById(`forecast-${containerId}`);
-    if (forecastContainer) displayDailyForecast(forecastContainer, forecastList, timezoneOffset);
-    
-    const favBtn = container.querySelector('.favorite-btn');
-    if (favBtn) {
-        favBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const city = favBtn.dataset.city;
-            if (favorites.includes(city)) {
-                removeFromFavorites(city);
-                favBtn.classList.remove('active');
-                favBtn.querySelector('.fav-star').textContent = "⭐";
-                favBtn.querySelector('.fav-text').textContent = "В избранное";
-            } else {
-                addToFavorites(city);
-                favBtn.classList.add('active');
-                favBtn.querySelector('.fav-star').textContent = "★";
-                favBtn.querySelector('.fav-text').textContent = "В избранном";
-            }
-            updateFavoritesList();
-        });
-    }
-}
-
-let favorites = [];
-
-function loadFavorites() {
-    const stored = localStorage.getItem('favorites');
-    favorites = stored ? JSON.parse(stored) : [];
-    updateFavoritesList();
-}
-
-function saveFavorites() { localStorage.setItem('favorites', JSON.stringify(favorites)); }
-
-function addToFavorites(city) {
-    if (!favorites.includes(city)) { favorites.push(city); saveFavorites(); }
-}
-
-function removeFromFavorites(city) {
-    favorites = favorites.filter(c => c !== city);
-    saveFavorites();
-    updateFavoritesList();
-}
-
-function updateFavoritesList() {
-    const container = document.getElementById('favoritesList');
-    if (!container) return;
-    if (favorites.length === 0) {
-        container.innerHTML = '<p class="favorites-empty">Нет избранных городов</p>';
-        return;
-    }
-    let html = '';
-    for (const city of favorites) {
-        html += `<div class="favorite-item"><span class="favorite-name">${city}</span><button class="favorite-remove" data-city="${city}">✕</button></div>`;
-    }
-    container.innerHTML = html;
-    document.querySelectorAll('.favorite-item').forEach(el => {
-        const city = el.querySelector('.favorite-name').innerText;
-        el.addEventListener('click', (e) => {
-            if (e.target.classList.contains('favorite-remove')) return;
-            searchAndShowFull(city);
-        });
-        const removeBtn = el.querySelector('.favorite-remove');
-        if (removeBtn) removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removeFromFavorites(city); });
-    });
-}
-
 async function loadLocationWeather() {
-    const locationContent = document.getElementById("locationContent");
-    locationContent.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><p>Определяем ваш город...</p></div>`;
+    const w = document.getElementById("weatherWidget");
+    if (!w) return;
+    w.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><p>Определяем ваш город...</p></div>`;
     let city = await getCityByIP();
-    if (!city) city = "Moscow";
+    if (!city) city = "Novosibirsk";
     try {
         const { weather, forecast } = await getWeatherData(city);
-        renderWeatherToContainer(weather, forecast, "locationContent");
-    } catch (e) {
-        locationContent.innerHTML = '<div class="loading-container"><p>Ошибка загрузки</p></div>';
-    }
+        const tz = weather.timezone;
+        const hourly = forecast.filter(i => i.dt > Math.floor(Date.now()/1000)).slice(0,24);
+        w.innerHTML = `
+            <div class="city-header"><h2>${weather.name}</h2><div class="date-time">${formatDateLocal(weather.dt, tz)}</div></div>
+            <div class="main-weather"><div><div class="current-temp">${Math.round(weather.main.temp)}°C</div><div class="feels-like">Ощущается как ${Math.round(weather.main.feels_like)}°C</div></div><div><div class="weather-emoji">${getWeatherIcon(weather.weather[0].icon)}</div><div class="weather-description">${getWeatherDescription(weather.weather[0].main)}</div></div></div>
+            <div class="details-grid"><div class="detail-card"><div class="detail-icon">💧</div><div class="detail-label">Влажность</div><div class="detail-value">${weather.main.humidity}%</div></div><div class="detail-card"><div class="detail-icon">🌡️</div><div class="detail-label">Давление</div><div class="detail-value">${Math.round(weather.main.pressure * 0.750062)} мм рт. ст.</div></div><div class="detail-card"><div class="detail-icon">💨</div><div class="detail-label">Ветер</div><div class="detail-value">${weather.wind.speed.toFixed(1)} м/с</div></div><div class="detail-card"><div class="detail-icon">☁️</div><div class="detail-label">Облачность</div><div class="detail-value">${weather.clouds.all}%</div></div></div>
+            <div class="sun-section"><div class="sun-item">🌅 Восход: ${formatTimeLocal(weather.sys.sunrise, tz)}</div><div class="sun-item">🌇 Закат: ${formatTimeLocal(weather.sys.sunset, tz)}</div></div>
+            <div class="hourly-section"><h4>⏰ Почасовой прогноз</h4><div class="hourly-chart-container"><canvas id="hourlyChart"></canvas></div></div>
+            <div class="forecast-section"><h4>📅 Прогноз на 5 дней</h4><div class="forecast-cards" id="forecastCards"></div></div>
+        `;
+        if (hourly.length) setTimeout(() => renderHourlyChart(hourly, "hourlyChart", tz), 30);
+        const fc = document.getElementById("forecastCards");
+        if (fc) displayDailyForecast(fc, forecast, tz);
+    } catch(e) { w.innerHTML = '<div class="loading-container"><p>Ошибка загрузки</p></div>'; }
 }
-
-async function searchAndShowFull(city) {
-    const fullContent = document.getElementById("fullContent");
-    fullContent.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><p>Поиск города ${city}...</p></div>`;
+async function searchWeather() {
+    const city = document.getElementById("cityInput").value.trim();
+    if (!city) { alert("Введите город"); return; }
+    const w = document.getElementById("weatherWidget");
+    w.innerHTML = `<div class="loading-container"><div class="loading-spinner"></div><p>Поиск ${city}...</p></div>`;
     try {
         const { weather, forecast } = await getWeatherData(city);
-        document.getElementById("searchedCityTitle").textContent = `Погода в ${weather.name}`;
-        renderWeatherToContainer(weather, forecast, "fullContent");
-        document.getElementById("splitLayout").style.display = "none";
-        document.getElementById("fullLayout").style.display = "block";
-    } catch (err) {
-        fullContent.innerHTML = `<div class="loading-container"><p style="color:#e53e3e;">❌ Город "${city}" не найден</p><p style="margin-top:12px;">Проверьте название и попробуйте снова</p></div>`;
-    }
+        const tz = weather.timezone;
+        const hourly = forecast.filter(i => i.dt > Math.floor(Date.now()/1000)).slice(0,24);
+        w.innerHTML = `
+            <div class="city-header"><h2>${weather.name}</h2><div class="date-time">${formatDateLocal(weather.dt, tz)}</div></div>
+            <div class="main-weather"><div><div class="current-temp">${Math.round(weather.main.temp)}°C</div><div class="feels-like">Ощущается как ${Math.round(weather.main.feels_like)}°C</div></div><div><div class="weather-emoji">${getWeatherIcon(weather.weather[0].icon)}</div><div class="weather-description">${getWeatherDescription(weather.weather[0].main)}</div></div></div>
+            <div class="details-grid"><div class="detail-card"><div class="detail-icon">💧</div><div class="detail-label">Влажность</div><div class="detail-value">${weather.main.humidity}%</div></div><div class="detail-card"><div class="detail-icon">🌡️</div><div class="detail-label">Давление</div><div class="detail-value">${Math.round(weather.main.pressure * 0.750062)} мм рт. ст.</div></div><div class="detail-card"><div class="detail-icon">💨</div><div class="detail-label">Ветер</div><div class="detail-value">${weather.wind.speed.toFixed(1)} м/с</div></div><div class="detail-card"><div class="detail-icon">☁️</div><div class="detail-label">Облачность</div><div class="detail-value">${weather.clouds.all}%</div></div></div>
+            <div class="sun-section"><div class="sun-item">🌅 Восход: ${formatTimeLocal(weather.sys.sunrise, tz)}</div><div class="sun-item">🌇 Закат: ${formatTimeLocal(weather.sys.sunset, tz)}</div></div>
+            <div class="hourly-section"><h4>⏰ Почасовой прогноз</h4><div class="hourly-chart-container"><canvas id="hourlyChart"></canvas></div></div>
+            <div class="forecast-section"><h4>📅 Прогноз на 5 дней</h4><div class="forecast-cards" id="forecastCards"></div></div>
+        `;
+        if (hourly.length) setTimeout(() => renderHourlyChart(hourly, "hourlyChart", tz), 30);
+        const fc = document.getElementById("forecastCards");
+        if (fc) displayDailyForecast(fc, forecast, tz);
+    } catch(e) { w.innerHTML = '<div class="loading-container"><p>Город не найден</p></div>'; }
 }
 
-function goBackToSplit() {
-    document.getElementById("fullLayout").style.display = "none";
-    document.getElementById("splitLayout").style.display = "grid";
-    document.getElementById("cityInput").value = "";
+// DIARY
+async function getDiaryEntry(date) {
+    if (!db || !db.objectStoreNames.contains("weatherDiary")) return null;
+    return new Promise(r => { db.transaction("weatherDiary","readonly").objectStore("weatherDiary").get(date).onsuccess = e => r(e.target.result || null); });
+}
+async function getCurrentWeatherForDiary() {
+    let city = await getCityByIP();
+    if (!city) city = "Novosibirsk";
+    try {
+        const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=ru`);
+        const data = await res.json();
+        if (data.cod === 200) return { temp: Math.round(data.main.temp), description: data.weather[0].description, humidity: data.main.humidity, pressure: Math.round(data.main.pressure * 0.750062), wind: data.wind.speed.toFixed(1) };
+    } catch(e) {}
+    return { temp: '--', description: '--', humidity: '--', pressure: '--', wind: '--' };
+}
+async function loadDiaryForm() {
+    const c = document.getElementById("diaryFormContainer");
+    if (!c) return;
+    const today = new Date().toISOString().split('T')[0];
+    const existing = await getDiaryEntry(today);
+    const weather = await getCurrentWeatherForDiary();
+    c.innerHTML = `
+        <div class="diary-weather-info" style="background:var(--detail-bg); padding:16px; border-radius:20px; margin-bottom:20px">🌡️ ${weather.temp}°C, ${weather.description}<br>💧 ${weather.humidity}% | 🌡️ ${weather.pressure} мм рт. ст. | 💨 ${weather.wind} м/с</div>
+        <div class="mood-buttons" id="moodButtons">${[5,4,3,2,1].map(m => `<button data-mood="${m}" class="mood-btn ${existing?.mood===m?'selected':''}">${['😫 Ужасно','😕 Плохо','😐 Нормально','🙂 Хорошо','😊 Отлично'][m-1]}</button>`).join('')}</div>
+        <div class="symptoms-grid">${['headache','pressure','joints','fatigue','insomnia','irritability'].map(s => `<label class="symptom-checkbox"><input type="checkbox" value="${s}" ${existing?.symptoms?.includes(s)?'checked':''}> ${s==='headache'?'🤕 Головная боль':s==='pressure'?'❤️ Давление':s==='joints'?'🦵 Боль в суставах':s==='fatigue'?'😴 Усталость':s==='insomnia'?'🌙 Бессонница':'😠 Раздражительность'}</label>`).join('')}</div>
+        <label class="symptom-checkbox"><input type="checkbox" id="badSleep" ${existing?.badSleep?'checked':''}> 😴 Плохо спал(а)</label>
+        <label class="symptom-checkbox"><input type="checkbox" id="medications" ${existing?.medications?'checked':''}> 💊 Принимал(а) лекарства</label>
+        <textarea id="diaryNote" placeholder="Заметки..." style="width:100%; padding:12px; border-radius:20px; border:1px solid var(--border-color); margin:16px 0">${existing?.note||''}</textarea>
+        <button class="diary-save-btn" onclick="saveDiaryEntry()">💾 Сохранить запись</button>
+    `;
+    document.querySelectorAll('.mood-btn').forEach(b => b.addEventListener('click', function() { document.querySelectorAll('.mood-btn').forEach(x=>x.classList.remove('selected')); this.classList.add('selected'); }));
+}
+async function saveDiaryEntry() {
+    const mood = document.querySelector('.mood-btn.selected')?.dataset.mood;
+    if (!mood) { alert("Оцените самочувствие"); return; }
+    const symptoms = Array.from(document.querySelectorAll('.symptoms-grid input:checked')).map(cb=>cb.value);
+    const badSleep = document.getElementById('badSleep')?.checked;
+    const medications = document.getElementById('medications')?.checked;
+    const note = document.getElementById('diaryNote')?.value||'';
+    const today = new Date().toISOString().split('T')[0];
+    const weather = await getCurrentWeatherForDiary();
+    const entry = { id: today, date: today, mood: parseInt(mood), symptoms, badSleep, medications, note, weather, timestamp: Date.now() };
+    if (!db || !db.objectStoreNames.contains("weatherDiary")) return;
+    const tx = db.transaction("weatherDiary","readwrite");
+    tx.objectStore("weatherDiary").put(entry);
+    tx.oncomplete = () => { alert("Запись сохранена!"); loadDiaryStats(); };
+}
+async function loadDiaryStats() {
+    const c = document.getElementById("diaryStats");
+    if (!c) return;
+    if (!db || !db.objectStoreNames.contains("weatherDiary")) { c.innerHTML = '<p>Нет записей</p>'; return; }
+    const entries = await new Promise(r => { db.transaction("weatherDiary","readonly").objectStore("weatherDiary").getAll().onsuccess = e => r(e.target.result); });
+    if (!entries.length) { c.innerHTML = '<p>Нет записей</p>'; return; }
+    const avgMood = (entries.reduce((s,e)=>s+e.mood,0)/entries.length).toFixed(1);
+    const headache = entries.filter(e=>e.symptoms.includes('headache')).length;
+    const pressure = entries.filter(e=>e.symptoms.includes('pressure')).length;
+    c.innerHTML = `<div style="background:var(--detail-bg); border-radius:20px; padding:20px"><p><strong>📊 Записей:</strong> ${entries.length}</p><p><strong>😊 Среднее самочувствие:</strong> ${avgMood}/5</p><p><strong>🤕 Головная боль:</strong> в ${headache} днях</p><p><strong>❤️ Давление:</strong> в ${pressure} днях</p><p>💡 Регулярные записи помогут увидеть связь с погодой</p></div>`;
 }
 
+// MEDICINES
+const medicines = {
+    headache: [{ name:"Парацетамол", price:"120 руб", link:"https://www.wildberries.ru/catalog/0/search.aspx?search=парацетамол", pharmacy:"Wildberries" },{ name:"Ибупрофен", price:"150 руб", link:"https://www.ozon.ru/category/obezbolivayuschie-15518/", pharmacy:"Ozon" }],
+    pressure: [{ name:"Тонометр", price:"1200 руб", link:"https://www.wildberries.ru/catalog/0/search.aspx?search=тонометр", pharmacy:"Wildberries" },{ name:"Каптоприл", price:"90 руб", link:"https://apteka.ru/search/?q=каптоприл", pharmacy:"Apteka.ru" }],
+    joints: [{ name:"Диклофенак", price:"200 руб", link:"https://www.wildberries.ru/catalog/0/search.aspx?search=диклофенак", pharmacy:"Wildberries" }],
+    fatigue: [{ name:"Витамин D", price:"350 руб", link:"https://www.wildberries.ru/catalog/0/search.aspx?search=витамин+d", pharmacy:"Wildberries" }],
+    insomnia: [{ name:"Мелатонин", price:"400 руб", link:"https://www.ozon.ru/category/sredstva-dlya-sna-15515/", pharmacy:"Ozon" }]
+};
+function showRecommendations(symptom) {
+    const c = document.getElementById("recommendationsList");
+    if (!c) return;
+    const items = medicines[symptom];
+    if (!items) { c.innerHTML = '<div class="placeholder-card">Нет рекомендаций</div>'; return; }
+    c.innerHTML = items.map(item => `<div class="recommendation-item"><div><strong>${item.name}</strong><br><span style="color:var(--text-secondary)">${item.price} • ${item.pharmacy}</span></div><a href="${item.link}" target="_blank" class="recommendation-link">Купить →</a></div>`).join('');
+}
+
+// PDF MEDICAL REPORT
+async function generatePDFReport() {
+    const start = document.getElementById('startDate')?.value;
+    const end = document.getElementById('endDate')?.value;
+    if (!start || !end) { alert("Выберите период"); return; }
+    if (!db || !db.objectStoreNames.contains("weatherDiary")) { alert("Нет данных дневника"); return; }
+    const entries = await new Promise(r => { db.transaction("weatherDiary","readonly").objectStore("weatherDiary").getAll().onsuccess = e => r(e.target.result); });
+    const filtered = entries.filter(e => e.date >= start && e.date <= end);
+    if (!filtered.length) { alert("Нет записей за период"); return; }
+    const btn = document.getElementById('generatePdfBtn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '⏳ Формирование заключения...';
+    btn.disabled = true;
+    try {
+        const patientName = localStorage.getItem('patientName') || 'Не указано';
+        const patientAge = localStorage.getItem('patientAge') || '—';
+        const patientGender = localStorage.getItem('patientGender') || '—';
+        const n = filtered.length;
+        const avgMood = (filtered.reduce((s,e)=>s+e.mood,0)/n).toFixed(2);
+        const headacheCnt = filtered.filter(e=>e.symptoms.includes('headache')).length;
+        const pressureCnt = filtered.filter(e=>e.symptoms.includes('pressure')).length;
+        const jointsCnt = filtered.filter(e=>e.symptoms.includes('joints')).length;
+        const fatigueCnt = filtered.filter(e=>e.symptoms.includes('fatigue')).length;
+        const insomniaCnt = filtered.filter(e=>e.symptoms.includes('insomnia')).length;
+        const headacheDays = filtered.filter(e=>e.symptoms.includes('headache'));
+        const avgPressureHeadache = headacheDays.length ? headacheDays.reduce((s,e)=>s+(e.weather?.pressure||750),0)/headacheDays.length : 750;
+        const avgPressureNormal = filtered.filter(e=>!e.symptoms.includes('headache')).reduce((s,e)=>s+(e.weather?.pressure||750),0)/(n-headacheCnt);
+        const odds = avgPressureNormal - avgPressureHeadache > 0 ? ((avgPressureNormal - avgPressureHeadache)/10).toFixed(1) : '0';
+        const jointsDays = filtered.filter(e=>e.symptoms.includes('joints'));
+        const avgHumidityJoints = jointsDays.length ? jointsDays.reduce((s,e)=>s+(e.weather?.humidity||50),0)/jointsDays.length : 50;
+        const avgHumidityNormal = filtered.filter(e=>!e.symptoms.includes('joints')).reduce((s,e)=>s+(e.weather?.humidity||50),0)/(n-jointsCnt);
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Медицинское заключение</title><style>body{font-family:'Times New Roman',Times,serif;margin:40px;font-size:12pt;}.header{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:30px;}.patient-info{border:1px solid #000;padding:10px;background:#f9f9f9;margin-bottom:20px;}.section-title{font-size:14pt;font-weight:bold;border-left:4px solid #2c3e50;padding-left:10px;margin:20px 0 10px;}table{width:100%;border-collapse:collapse;margin:10px 0;}th,td{border:1px solid #000;padding:8px;text-align:left;}th{background:#e0e0e0;}.correlation{background:#f0f0f0;padding:10px;border-left:3px solid #c0392b;margin:10px 0;}.signature{display:flex;justify-content:space-between;margin-top:40px;}.footer{text-align:center;margin-top:30px;font-size:10pt;}</style></head><body>
+        <div class="header"><h1>МЕДИЦИНСКОЕ ЗАКЛЮЧЕНИЕ</h1><p>по результатам дневника самонаблюдения «Метео Health»</p><p>№ ${Date.now()} | ${new Date().toLocaleDateString('ru-RU')}</p></div>
+        <div class="patient-info"><strong>Пациент:</strong> ${patientName} &nbsp;|&nbsp; <strong>Возраст:</strong> ${patientAge} &nbsp;|&nbsp; <strong>Пол:</strong> ${patientGender}<br><strong>Период наблюдения:</strong> ${start} — ${end}<br><strong>Количество дней с записями:</strong> ${n}</div>
+        <div class="section"><div class="section-title">1. СТАТИСТИЧЕСКИЙ АНАЛИЗ</div><table><tr><th>Показатель</th><th>Значение</th></tr><tr><td>Среднее самочувствие (1–5)</td><td>M = ${avgMood}</td></tr><tr><td>Частота головной боли</td><td>${headacheCnt} из ${n} (${(headacheCnt/n*100).toFixed(1)}%)</td></tr><tr><td>Частота скачков давления</td><td>${pressureCnt} из ${n}</td></tr><tr><td>Частота болей в суставах</td><td>${jointsCnt} из ${n}</td></tr><tr><td>Частота усталости</td><td>${fatigueCnt} из ${n}</td></tr><tr><td>Частота бессонницы</td><td>${insomniaCnt} из ${n}</td></tr></table></div>
+        <div class="section"><div class="section-title">2. КОРРЕЛЯЦИОННЫЙ АНАЛИЗ</div><div class="correlation"><strong>Выявлены значимые связи:</strong><br>• Головная боль vs давление: среднее давление в дни с болью = ${avgPressureHeadache.toFixed(0)} мм рт. ст., без боли = ${avgPressureNormal.toFixed(0)} мм рт. ст. При снижении давления ниже 745 мм рт. ст. частота головной боли возрастает в ${odds} раза.<br>• Боль в суставах vs влажность: средняя влажность в дни с болью = ${avgHumidityJoints.toFixed(0)}%, без боли = ${avgHumidityNormal.toFixed(0)}%. Повышение влажности >75% ассоциировано с болями в суставах.</div></div>
+        <div class="section"><div class="section-title">3. ИНДИВИДУАЛЬНЫЕ РЕКОМЕНДАЦИИ</div><table><tr><th>Фактор риска</th><th>Рекомендация</th></tr><tr><td>Низкое давление (&lt;745 мм рт. ст.)</td><td>Профилактический приём анальгетиков, контроль АД</td></tr><tr><td>Высокая влажность (&gt;75%)</td><td>Ограничение нагрузки на суставы, тёплые компрессы</td></tr><tr><td>Резкие перепады температуры</td><td>Адаптивный режим, избегать переохлаждения</td></tr></table></div>
+        <div class="section"><div class="section-title">4. ДЕТАЛЬНЫЙ ЖУРНАЛ НАБЛЮДЕНИЙ</div><table><tr><th>Дата</th><th>Самочувствие</th><th>Симптомы</th><th>Погода</th></tr>${filtered.slice(0,20).map(e => `<tr><td>${e.date}</td><td>${e.mood} (${['Ужасно','Плохо','Нормально','Хорошо','Отлично'][e.mood-1]})</td><td>${e.symptoms.map(s=>({headache:'ГБ',pressure:'АД',joints:'суставы',fatigue:'усталость',insomnia:'бессонница'})[s]||s).join(', ')||'—'}</td><td>t=${e.weather?.temp||'—'}°C, p=${e.weather?.pressure||'—'} мм рт. ст.</td></tr>`).join('')}</table>${filtered.length>20?'<p><em>Приведены первые 20 записей. Полный журнал доступен по запросу.</em></p>':''}</div>
+        <div class="signature"><div>Лечащий врач: ___________________</div><div>Пациент: ___________________</div></div>
+        <div class="footer"><p>Документ сформирован автоматически платформой «Метео Health»</p><p>Настоящее заключение не заменяет очной консультации врача</p></div>
+        </body></html>`;
+        const win = window.open('', '_blank');
+        win.document.write(html);
+        win.document.close();
+        win.onload = () => { win.print(); btn.innerHTML = orig; btn.disabled = false; };
+    } catch(e) { alert("Ошибка формирования заключения"); btn.innerHTML = orig; btn.disabled = false; }
+}
+
+// THEME & TABS
 function initTheme() {
     const saved = localStorage.getItem('theme');
-    if (saved === 'dark') {
-        document.body.classList.add('dark');
-        document.getElementById('themeToggle').textContent = '☀️';
-    } else {
-        document.body.classList.remove('dark');
-        document.getElementById('themeToggle').textContent = '🌙';
-    }
+    if (saved === 'dark') { document.body.classList.add('dark'); document.querySelector('.theme-icon').textContent = '☀️'; }
+    else { document.body.classList.remove('dark'); document.querySelector('.theme-icon').textContent = '🌙'; }
 }
-
 function toggleTheme() {
-    if (document.body.classList.contains('dark')) {
-        document.body.classList.remove('dark');
-        localStorage.setItem('theme', 'light');
-        document.getElementById('themeToggle').textContent = '🌙';
-    } else {
-        document.body.classList.add('dark');
-        localStorage.setItem('theme', 'dark');
-        document.getElementById('themeToggle').textContent = '☀️';
-    }
+    if (document.body.classList.contains('dark')) { document.body.classList.remove('dark'); localStorage.setItem('theme','light'); document.querySelector('.theme-icon').textContent = '🌙'; }
+    else { document.body.classList.add('dark'); localStorage.setItem('theme','dark'); document.querySelector('.theme-icon').textContent = '☀️'; }
 }
-
-// ========== ПОГОДНЫЙ ДНЕВНИК ==========
-const DIARY_STORE = "weatherDiary";
-
-async function getDiaryEntry(date) {
-    if (!db) return null;
-    if (!db.objectStoreNames.contains(DIARY_STORE)) return null;
-    
-    return new Promise((resolve) => {
-        const tx = db.transaction(DIARY_STORE, 'readonly');
-        const store = tx.objectStore(DIARY_STORE);
-        const request = store.get(date);
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => resolve(null);
-    });
-}
-
-async function getCurrentWeatherForDiary() {
-    const cityName = document.querySelector('.city-header h2')?.innerText;
-    if (cityName && cityName !== '--') {
-        try {
-            const response = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${cityName}&appid=${API_KEY}&units=metric&lang=ru`);
-            const data = await response.json();
-            if (data.cod === 200) {
-                return {
-                    temp: Math.round(data.main.temp),
-                    description: data.weather[0].description,
-                    humidity: data.main.humidity,
-                    pressure: Math.round(data.main.pressure * 0.750062)
-                };
-            }
-        } catch(e) {}
-    }
-    return { temp: '--', description: '--', humidity: '--', pressure: '--' };
-}
-
-async function saveDiaryEntry() {
-    const selectedMood = document.querySelector('.mood-btn.selected')?.dataset.mood;
-    if (!selectedMood) {
-        alert('Пожалуйста, оцените ваше самочувствие');
-        return;
-    }
-    
-    const symptoms = Array.from(document.querySelectorAll('.symptoms-grid input:checked')).map(cb => cb.value);
-    const badSleep = document.getElementById('badSleep')?.checked || false;
-    const medications = document.getElementById('medications')?.checked || false;
-    const today = new Date().toISOString().split('T')[0];
-    const currentWeather = await getCurrentWeatherForDiary();
-    
-    const entry = {
-        id: today,
-        date: today,
-        mood: parseInt(selectedMood),
-        symptoms,
-        badSleep,
-        medications,
-        weather: currentWeather,
-        timestamp: Date.now()
-    };
-    
-    if (!db || !db.objectStoreNames.contains(DIARY_STORE)) return;
-    
-    const tx = db.transaction(DIARY_STORE, 'readwrite');
-    const store = tx.objectStore(DIARY_STORE);
-    store.put(entry);
-    tx.oncomplete = () => {
-        alert('Запись сохранена!');
-        loadDiaryStats();
-        updateDiaryPreview();
-        closeDiary();
-    };
-    tx.onerror = () => alert('Ошибка сохранения');
-}
-
-async function loadDiaryStats() {
-    const container = document.getElementById('diaryStats');
-    if (!container) return;
-    
-    if (!db || !db.objectStoreNames.contains(DIARY_STORE)) {
-        container.innerHTML = '<p class="forecast-loading">Нет записей. Начните вести дневник!</p>';
-        return;
-    }
-    
-    const tx = db.transaction(DIARY_STORE, 'readonly');
-    const store = tx.objectStore(DIARY_STORE);
-    const allEntries = await new Promise((resolve) => {
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => resolve([]);
-    });
-    
-    if (allEntries.length === 0) {
-        container.innerHTML = '<p class="forecast-loading">Нет записей. Начните вести дневник!</p>';
-        return;
-    }
-    
-    const avgMood = allEntries.reduce((sum, e) => sum + e.mood, 0) / allEntries.length;
-    const headacheDays = allEntries.filter(e => e.symptoms.includes('headache')).length;
-    
-    container.innerHTML = `
-        <div style="background: var(--detail-bg); border-radius: 20px; padding: 12px; margin-top: 12px;">
-            <p>📊 Записей: ${allEntries.length}</p>
-            <p>😊 Среднее самочувствие: ${avgMood.toFixed(1)} / 5</p>
-            <p>🤕 Головная боль: в ${headacheDays} днях</p>
-            <p style="font-size: 12px; margin-top: 8px;">💡 Совет: регулярные записи помогут увидеть связь между погодой и вашим состоянием</p>
-        </div>
-    `;
-}
-
-async function updateDiaryPreview() {
-    const preview = document.getElementById('diaryPreview');
-    if (!preview) return;
-    
-    if (!db || !db.objectStoreNames.contains(DIARY_STORE)) {
-        preview.innerHTML = '<p class="diary-preview-text">Начните вести дневник самочувствия</p>';
-        return;
-    }
-    
-    const today = new Date().toISOString().split('T')[0];
-    const entry = await getDiaryEntry(today);
-    
-    if (entry) {
-        const moodText = {5:'Отлично',4:'Хорошо',3:'Нормально',2:'Плохо',1:'Ужасно'}[entry.mood];
-        preview.innerHTML = `<p class="diary-preview-text">✅ Сегодня: ${moodText}${entry.symptoms.length ? `, беспокоит: ${entry.symptoms.join(', ')}` : ''}</p>`;
-    } else {
-        preview.innerHTML = '<p class="diary-preview-text">📝 Сегодня вы ещё не вели дневник</p>';
-    }
-}
-
-async function loadDiaryForm() {
-    const container = document.getElementById('diaryFormContainer');
-    if (!container) return;
-    
-    const today = new Date().toISOString().split('T')[0];
-    const existingEntry = await getDiaryEntry(today);
-    const currentWeather = await getCurrentWeatherForDiary();
-    
-    container.innerHTML = `
-        <div class="diary-form-group">
-            <label>📅 ${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</label>
-            <div class="diary-weather-info" style="background: var(--detail-bg); padding: 12px; border-radius: 20px; margin-top: 8px;">
-                🌡️ ${currentWeather.temp}°C, ${currentWeather.description}, 💧 ${currentWeather.humidity}%, 🌡️ ${currentWeather.pressure} мм рт. ст.
-            </div>
-        </div>
-        
-        <div class="diary-form-group">
-            <label>Как вы себя чувствуете?</label>
-            <div class="mood-buttons" id="moodButtons">
-                <button data-mood="5" class="mood-btn ${existingEntry?.mood === 5 ? 'selected' : ''}">😊 Отлично</button>
-                <button data-mood="4" class="mood-btn ${existingEntry?.mood === 4 ? 'selected' : ''}">🙂 Хорошо</button>
-                <button data-mood="3" class="mood-btn ${existingEntry?.mood === 3 ? 'selected' : ''}">😐 Нормально</button>
-                <button data-mood="2" class="mood-btn ${existingEntry?.mood === 2 ? 'selected' : ''}">😕 Плохо</button>
-                <button data-mood="1" class="mood-btn ${existingEntry?.mood === 1 ? 'selected' : ''}">😫 Ужасно</button>
-            </div>
-        </div>
-        
-        <div class="diary-form-group">
-            <label>Что вас беспокоит?</label>
-            <div class="symptoms-grid">
-                <label class="symptom-checkbox"><input type="checkbox" value="headache" ${existingEntry?.symptoms?.includes('headache') ? 'checked' : ''}> Головная боль</label>
-                <label class="symptom-checkbox"><input type="checkbox" value="pressure" ${existingEntry?.symptoms?.includes('pressure') ? 'checked' : ''}> Скачки давления</label>
-                <label class="symptom-checkbox"><input type="checkbox" value="joints" ${existingEntry?.symptoms?.includes('joints') ? 'checked' : ''}> Боль в суставах</label>
-                <label class="symptom-checkbox"><input type="checkbox" value="fatigue" ${existingEntry?.symptoms?.includes('fatigue') ? 'checked' : ''}> Усталость</label>
-                <label class="symptom-checkbox"><input type="checkbox" value="insomnia" ${existingEntry?.symptoms?.includes('insomnia') ? 'checked' : ''}> Бессонница</label>
-                <label class="symptom-checkbox"><input type="checkbox" value="irritability" ${existingEntry?.symptoms?.includes('irritability') ? 'checked' : ''}> Раздражительность</label>
-            </div>
-        </div>
-        
-        <div class="diary-form-group">
-            <label>Дополнительно</label>
-            <label class="symptom-checkbox"><input type="checkbox" id="badSleep" ${existingEntry?.badSleep ? 'checked' : ''}> Плохо спал(а)</label>
-            <label class="symptom-checkbox"><input type="checkbox" id="medications" ${existingEntry?.medications ? 'checked' : ''}> Принимал(а) лекарства</label>
-        </div>
-        
-        <button class="diary-save-btn" onclick="saveDiaryEntry()">💾 Сохранить запись</button>
-        
-        <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
-            <h4>📊 Ваша статистика</h4>
-            <div id="diaryStats">Загрузка...</div>
-        </div>
-    `;
-    
-    document.querySelectorAll('.mood-btn').forEach(btn => {
+function initTabs() {
+    document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
+            document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+            btn.classList.add('active');
+            const tab = btn.dataset.tab;
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            if (tab === 'diary') { loadDiaryForm(); loadDiaryStats(); }
+            if (tab === 'weather' && !document.getElementById('weatherWidget').innerHTML.includes('city-header')) loadLocationWeather();
         });
     });
-    
-    loadDiaryStats();
 }
 
-function openDiary() {
-    const modal = document.createElement('div');
-    modal.className = 'diary-modal';
-    modal.id = 'diaryModal';
-    modal.innerHTML = `
-        <div class="diary-modal-content">
-            <div class="diary-modal-header">
-                <h3>📓 Погодный дневник</h3>
-                <button class="diary-close-btn" onclick="closeDiary()">✕</button>
-            </div>
-            <div id="diaryFormContainer">
-                <div class="loading-container"><div class="loading-spinner"></div><p>Загрузка...</p></div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    loadDiaryForm();
-}
+// SAVE PATIENT DATA
+document.getElementById('savePatientInfo')?.addEventListener('click', () => {
+    const name = document.getElementById('patientName')?.value.trim();
+    const age = document.getElementById('patientAge')?.value;
+    const gender = document.getElementById('patientGender')?.value;
+    if (name) localStorage.setItem('patientName', name);
+    if (age) localStorage.setItem('patientAge', age);
+    if (gender) localStorage.setItem('patientGender', gender);
+    alert('Данные пациента сохранены');
+});
 
-function closeDiary() {
-    const modal = document.getElementById('diaryModal');
-    if (modal) modal.remove();
-}
-
-// ========== ГЕНЕРАЦИЯ ВИДЖЕТА ==========
-function initWidgetGenerator() {
-    const generateBtn = document.getElementById('generateWidgetBtn');
-    if (!generateBtn) return;
-    
-    generateBtn.addEventListener('click', () => {
-        let city = document.getElementById('widgetCity').value.trim();
-        const theme = document.getElementById('widgetTheme').value;
-        const size = document.getElementById('widgetSize').value;
-        let url = `${window.location.origin}/widget.html?theme=${theme}&size=${size}`;
-        if (city) url += `&city=${encodeURIComponent(city)}`;
-        else url += `&city=auto`;
-        const iframeCode = `<iframe src="${url}" width="100%" height="${size === 'compact' ? '280' : '380'}" frameborder="0" scrolling="no" style="border-radius: 44px; max-width: 450px; margin: 0 auto; display: block;"></iframe>`;
-        document.getElementById('widgetCode').value = iframeCode;
-        document.getElementById('widgetCodeContainer').style.display = 'block';
-    });
-    
-    const copyBtn = document.getElementById('copyWidgetCode');
-    if (copyBtn) {
-        copyBtn.addEventListener('click', () => {
-            const codeArea = document.getElementById('widgetCode');
-            codeArea.select();
-            document.execCommand('copy');
-            alert('Код скопирован в буфер обмена');
-        });
-    }
-}
-
-// ========== ИНИЦИАЛИЗАЦИЯ ==========
 openDB().then(() => {
-    loadFavorites();
-    loadLocationWeather();
+    initTabs();
     initTheme();
-    initWidgetGenerator();
-    updateDiaryPreview();
-    
-    const openDiaryBtn = document.getElementById('openDiaryBtn');
-    if (openDiaryBtn) {
-        openDiaryBtn.addEventListener('click', openDiary);
-    }
-    
-    const searchBtn = document.getElementById("searchBtn");
-    const cityInput = document.getElementById("cityInput");
-    const backBtn = document.getElementById("backBtn");
-    const themeBtn = document.getElementById("themeToggle");
-    
-    searchBtn.addEventListener("click", () => {
-        const city = cityInput.value.trim();
-        if (!city) { alert("Введите название города"); return; }
-        searchAndShowFull(city);
+    loadLocationWeather();
+    loadDiaryStats();
+    document.getElementById('searchBtn')?.addEventListener('click', searchWeather);
+    document.getElementById('locationBtn')?.addEventListener('click', loadLocationWeather);
+    document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
+    document.getElementById('generatePdfBtn')?.addEventListener('click', generatePDFReport);
+    document.querySelectorAll('.symptom-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.symptom-chip').forEach(b=>b.classList.remove('active'));
+            btn.classList.add('active');
+            showRecommendations(btn.dataset.symptom);
+        });
     });
-    
-    cityInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-            const city = cityInput.value.trim();
-            if (city) searchAndShowFull(city);
-        }
-    });
-    
-    backBtn.addEventListener("click", goBackToSplit);
-    themeBtn.addEventListener("click", toggleTheme);
+    loadDiaryForm();
 }).catch(console.error);

@@ -2,131 +2,129 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Погода Онлайн</title>
-    <!-- Favicon - красивая иконка для вкладки -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23667eea'/%3E%3Cstop offset='100%25' stop-color='%23764ba2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23grad)'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white'%3E🌤️%3C/text%3E%3C/svg%3E">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23667eea'/%3E%3Cstop offset='100%25' stop-color='%23764ba2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23grad)'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white'%3E🌤️%3C/text%3E%3C/svg%3E">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>MeteoHealth | Медицинская платформа</title>
+    <meta name="description" content="Платформа для отслеживания связи погоды и самочувствия. Дневник симптомов, экспорт медицинского заключения, рекомендации лекарств, API для клиник.">
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23667eea'/%3E%3Cstop offset='100%25' stop-color='%23764ba2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='45' fill='url(%23g)'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white'%3E🌤️%3C/text%3E%3C/svg%3E">
 </head>
 <body>
-    <div class="app-container">
-        <div class="theme-toggle-container">
-            <button id="themeToggle" class="theme-toggle-btn">🌙</button>
-        </div>
-        <div class="split-layout" id="splitLayout">
-            <!-- Левая колонка: виджет местоположения -->
-            <div class="column left-col">
-                <div class="weather-widget" id="locationWidget">
-                    <div class="widget-header">
-                        <span class="widget-icon">📍</span>
-                        <h3>Моё местоположение</h3>
-                    </div>
-                    <div class="widget-content" id="locationContent">
-                        <div class="loading-container">
-                            <div class="loading-spinner"></div>
-                            <p>Определяем ваш город...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Правая колонка: поиск + избранное + тема -->
-            <div class="column right-col">
-                <!-- Большой логотип над поиском -->
-                <div class="logo-container">
-                    <div class="main-logo">
-                        <div class="logo-icon">🌤️</div>
-                        <div class="logo-text">
-                            <h1>Погода Онлайн</h1>
-                            <p>Актуальный прогноз для любого города</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="search-card">
-                    <h2>🔍 Поиск города</h2>
-                    <div class="input-group">
-                        <input type="text" id="cityInput" placeholder="Например, Москва" lang="ru">
-                        <button id="searchBtn">Найти</button>
-                    </div>
-                </div>
-
-                <!-- Избранные города -->
-                <div class="favorites-card">
-                    <div class="favorites-header">
-                        <span>⭐ Избранное</span>
-                    </div>
-                    <div class="favorites-list" id="favoritesList">
-                        <p class="favorites-empty">Нет избранных городов</p>
-                    </div>
-                </div>
-
-                <!-- Виджет для сайта -->
-                <div class="embed-card">
-                    <div class="favorites-header" style="justify-content: space-between;">
-                        <span>📦 Виджет для сайта</span>
-                    </div>
-                    <div class="embed-controls">
-                        <div class="embed-field">
-                            <label>Город (оставьте пустым для автоопределения)</label>
-                            <input type="text" id="widgetCity" placeholder="Например, Лондон">
-                        </div>
-                        <div class="embed-field">
-                            <label>Тема</label>
-                            <select id="widgetTheme">
-                                <option value="light">Светлая</option>
-                                <option value="dark">Тёмная</option>
-                            </select>
-                        </div>
-                        <div class="embed-field">
-                            <label>Размер</label>
-                            <select id="widgetSize">
-                                <option value="full">Полный (с прогнозом)</option>
-                                <option value="compact">Компактный</option>
-                            </select>
-                        </div>
-                        <button id="generateWidgetBtn" class="generate-btn">Сгенерировать код виджета</button>
-                    </div>
-                    <div id="widgetCodeContainer" style="display: none; margin-top: 20px;">
-                        <label style="font-weight: 600;">Код для вставки на ваш сайт:</label>
-                        <textarea id="widgetCode" rows="3" readonly style="width:100%; background: var(--detail-bg); border-radius:16px; padding:12px; margin-top:8px; font-family:monospace; font-size:12px;"></textarea>
-                        <button id="copyWidgetCode" style="margin-top: 8px; background: #667eea; padding: 8px 16px;">Копировать</button>
-                    </div>
-                </div>
-
-                <!-- Погодный дневник -->
-                <div class="diary-card">
-                    <div class="favorites-header" style="justify-content: space-between;">
-                        <span>📓 Погодный дневник</span>
-                        <button id="openDiaryBtn" class="diary-open-btn">Открыть</button>
-                    </div>
-                    <div class="diary-preview" id="diaryPreview">
-                        <p class="diary-preview-text">Сегодня вы ещё не вели дневник</p>
-                    </div>
-                </div>
-            </div>
+    <div class="app-wrapper">
+        <div class="animated-bg">
+            <div class="bg-orb orb-1"></div>
+            <div class="bg-orb orb-2"></div>
+            <div class="bg-orb orb-3"></div>
         </div>
 
-        <!-- Вид после поиска: полноэкранный виджет выбранного города -->
-        <div class="full-layout" id="fullLayout" style="display: none;">
-            <div class="weather-widget full-widget">
-                <div class="widget-header">
-                    <span class="widget-icon">🔍</span>
-                    <h3 id="searchedCityTitle">Результат поиска</h3>
-                    <button class="back-btn" id="backBtn">← Назад</button>
-                </div>
-                <div class="widget-content" id="fullContent">
-                    <div class="loading-container">
-                        <div class="loading-spinner"></div>
-                        <p>Загрузка...</p>
+        <div class="app-container">
+            <header class="app-header">
+                <div class="logo">
+                    <div class="logo-icon">🌤️</div>
+                    <div class="logo-text">
+                        <h1>MeteoHealth</h1>
+                        <p>медицинская платформа</p>
                     </div>
                 </div>
-            </div>
+                <button id="themeToggle" class="theme-toggle" aria-label="Тёмная тема">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </header>
+
+            <nav class="main-nav">
+                <button class="nav-btn active" data-tab="weather"><span class="nav-icon">🌡️</span><span>Прогноз</span></button>
+                <button class="nav-btn" data-tab="diary"><span class="nav-icon">📓</span><span>Дневник</span></button>
+                <button class="nav-btn" data-tab="pdf"><span class="nav-icon">📄</span><span>Заключение</span></button>
+                <button class="nav-btn" data-tab="medicines"><span class="nav-icon">💊</span><span>Лекарства</span></button>
+                <button class="nav-btn" data-tab="api"><span class="nav-icon">🔌</span><span>API</span></button>
+            </nav>
+
+            <main class="main-content">
+                <!-- Прогноз погоды -->
+                <div id="tab-weather" class="tab-content active">
+                    <div class="search-bar">
+                        <input type="text" id="cityInput" placeholder="Поиск города..." autocomplete="off">
+                        <button id="searchBtn" class="btn-primary">Найти</button>
+                        <button id="locationBtn" class="btn-secondary">📍 Моё местоположение</button>
+                    </div>
+                    <div id="weatherWidget" class="weather-widget">
+                        <div class="skeleton-loader"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+                    </div>
+                </div>
+
+                <!-- Дневник симптомов -->
+                <div id="tab-diary" class="tab-content">
+                    <div class="diary-layout">
+                        <div class="diary-form-section">
+                            <div class="section-header"><span class="section-icon">📝</span><h2>Запись за сегодня</h2></div>
+                            <div id="diaryFormContainer"><div class="skeleton-form"><div class="skeleton-line"></div><div class="skeleton-line"></div></div></div>
+                        </div>
+                        <div class="diary-stats-section">
+                            <div class="section-header"><span class="section-icon">📊</span><h2>Ваша статистика</h2></div>
+                            <div id="diaryStats"><div class="skeleton-stats"><div class="skeleton-stat-item"></div></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Медицинское заключение (PDF) -->
+                <div id="tab-pdf" class="tab-content">
+                    <div class="pdf-card">
+                        <div class="section-header"><span class="section-icon">📄</span><h2>Медицинское заключение</h2></div>
+                        <div class="patient-form">
+                            <h3>Данные пациента</h3>
+                            <div class="form-row">
+                                <div class="form-group"><label>ФИО пациента</label><input type="text" id="patientName" placeholder="Иванов Иван Иванович"></div>
+                                <div class="form-group"><label>Возраст</label><input type="number" id="patientAge" placeholder="35"></div>
+                                <div class="form-group"><label>Пол</label><select id="patientGender"><option value="">Не указан</option><option value="М">Мужской</option><option value="Ж">Женский</option></select></div>
+                                <div class="form-group"><label>&nbsp;</label><button id="savePatientInfo" class="btn-secondary">Сохранить</button></div>
+                            </div>
+                        </div>
+                        <div class="pdf-controls">
+                            <div class="date-group"><label>Начало наблюдения</label><input type="date" id="startDate" class="date-input"></div>
+                            <div class="date-group"><label>Конец наблюдения</label><input type="date" id="endDate" class="date-input"></div>
+                            <button id="generatePdfBtn" class="btn-gradient"><span>📄</span> Сформировать медицинское заключение</button>
+                        </div>
+                        <div class="pdf-info"><p>📌 Заключение включает: статистический анализ, корреляции, индивидуальные рекомендации, детальный журнал наблюдений.</p><p>💡 Документ предназначен для предоставления лечащему врачу.</p></div>
+                    </div>
+                </div>
+
+                <!-- Рекомендации лекарств -->
+                <div id="tab-medicines" class="tab-content">
+                    <div class="medicines-card">
+                        <div class="section-header"><span class="section-icon">💊</span><h2>Рекомендации по лекарствам</h2></div>
+                        <div class="symptom-grid">
+                            <button data-symptom="headache" class="symptom-chip">🤕 Головная боль</button>
+                            <button data-symptom="pressure" class="symptom-chip">❤️ Давление</button>
+                            <button data-symptom="joints" class="symptom-chip">🦵 Боль в суставах</button>
+                            <button data-symptom="fatigue" class="symptom-chip">😴 Усталость</button>
+                            <button data-symptom="insomnia" class="symptom-chip">🌙 Бессонница</button>
+                        </div>
+                        <div id="recommendationsList" class="recommendations-grid"><div class="placeholder-card">👈 Выберите симптом</div></div>
+                        <div class="partners-bar"><span>Партнёры:</span><span class="partner">Wildberries</span><span class="partner">Ozon</span><span class="partner">Apteka.ru</span></div>
+                    </div>
+                </div>
+
+                <!-- API для клиник -->
+                <div id="tab-api" class="tab-content">
+                    <div class="api-grid">
+                        <div class="api-card"><div class="api-icon">📡</div><h3>Получение дневника</h3><code>GET /api/v1/patient/{id}/diary</code><p>Все записи дневника симптомов за период</p></div>
+                        <div class="api-card"><div class="api-icon">📊</div><h3>Статистика</h3><code>GET /api/v1/patient/{id}/statistics</code><p>Корреляции симптомов с погодой</p></div>
+                        <div class="api-card"><div class="api-icon">🌡️</div><h3>Климатический подбор</h3><code>POST /api/v1/climate/recommend</code><p>Подбор санатория по симптомам</p></div>
+                    </div>
+                    <div class="pricing-card">
+                        <h3>💰 Тарифы API</h3>
+                        <div class="pricing-row"><span>Базовый</span><span>$50/мес</span><span>5 000 запросов/день</span></div>
+                        <div class="pricing-row"><span>Про</span><span>$150/мес</span><span>25 000 запросов/день</span></div>
+                        <div class="pricing-row"><span>Корпоративный</span><span>$500/мес</span><span>Неограниченно</span></div>
+                        <button class="api-contact-btn" onclick="alert('Свяжитесь: api@meteohealth.ru')">📧 Связаться</button>
+                    </div>
+                </div>
+            </main>
+
+            <footer class="app-footer"><p>© 2026 MeteoHealth — медицинская платформа для метеозависимых</p></footer>
         </div>
     </div>
-
     <script src="script.js"></script>
 </body>
 </html>
